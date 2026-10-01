@@ -11,6 +11,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 /* Layout: kiosk-first. Top bar with tabs; the Ingreso tab is a two-column "reloj + RUT" station that stacks on phones. */
 :root{
@@ -321,6 +324,15 @@ tr.citform td{background:var(--surface-2);white-space:normal}
   </section>
 </div>
 <datalist id="cursosList"></datalist>
+<div id="loginBox" hidden style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center">
+  <form id="loginForm" style="background:#fff;color:#111;padding:24px;border-radius:12px;display:grid;gap:12px;min-width:min(320px,90vw)">
+    <strong>Iniciar sesión</strong>
+    <input id="loginEmail" type="email" placeholder="Correo" required autocomplete="username" style="padding:10px;font:inherit">
+    <input id="loginPass" type="password" placeholder="Contraseña" required autocomplete="current-password" style="padding:10px;font:inherit">
+    <div id="loginErr" style="color:#b00020;font-size:14px"></div>
+    <button class="btn" type="submit">Entrar</button>
+  </form>
+</div>
 <div id="toast" class="toast" hidden></div>
 
 <script>
@@ -368,8 +380,8 @@ function rebuildAlumnos(){ S.alumnos.clear(); for(const [sl,c] of S.cursos){ for
 function allEntries(){ const out=[]; for(const [f,d] of S.dias){ for(const [id,e] of Object.entries(d.entries||{})){ if(!e.anulado) out.push({...e,id,fecha:f}); } } return out; }
 function countsYear(){ const m=new Map(); for(const e of allEntries()) m.set(e.rut,(m.get(e.rut)||0)+1); return m; }
 
-async function writeRetry(fn){ try{ return await fn(); } catch(e){ if(e?.code==="unavailable"||e?.code==="resource_exhausted"){ await new Promise(r=>setTimeout(r,600+Math.random()*900)); return await fn(); } throw e; } }
-function dbErr(e){ const c=e?.code; if(c==="invalid_argument") return "No tienes permiso para guardar datos en esta página. Pide acceso de Colaborador."; if(c==="quota_exceeded") return "La base de datos está llena. Elimina registros antiguos."; return "No se pudo guardar. Revisa la conexión e intenta de nuevo."; }
+async function writeRetry(fn){ try{ return await fn(); } catch(e){ if(e?.code==="unavailable"||e?.code==="resource-exhausted"){ await new Promise(r=>setTimeout(r,600+Math.random()*900)); return await fn(); } throw e; } }
+function dbErr(e){ const c=e?.code; if(c==="permission-denied") return "No tienes permiso para guardar datos. Inicia sesión con una cuenta autorizada."; if(c==="resource-exhausted") return "Se alcanzó la cuota de la base de datos. Intenta más tarde."; return "No se pudo guardar. Revisa la conexión e intenta de nuevo."; }
 
 async function saveCursoDoc(sl, nombre, alumnos){ await writeRetry(()=>S.db.doc("cursos/"+sl).set({nombre, alumnos})); }
 async function mergeIntoCurso(sl, nombre, add){ const ref=S.db.doc("cursos/"+sl); const snap=await ref.get(); if(snap.exists) await writeRetry(()=>ref.update({nombre, alumnos:add})); else await writeRetry(()=>ref.set({nombre, alumnos:add})); }
@@ -672,18 +684,47 @@ async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de dato
 let unsubAtr=null;
 function subscribeAtrasos(){ unsubAtr?.(); S.dias.clear(); unsubAtr=S.db.collection("atrasos").where("fecha",">=",`${S.year}-01-01`).onSnapshot(snap=>{ S.dias.clear(); snap.docs.forEach(d=>S.dias.set(d.id,d.data())); renderToday(); renderRegistro(); renderAlumnos(); renderAlerts(); }, e=>showBanner("Se perdió la conexión con los registros. Recarga la página.")); }
 function showBanner(t){ const b=$("#dbBanner"); b.textContent=t; b.hidden=false; }
+
+/* ---------- Firebase ----------
+   Pega aquí la configuración de tu app web (Firebase Console > Configuración del proyecto > Tus apps). */
+const FIREBASE_CONFIG = {
+  apiKey: "REEMPLAZAR",
+  authDomain: "REEMPLAZAR.firebaseapp.com",
+  projectId: "REEMPLAZAR",
+  storageBucket: "REEMPLAZAR.appspot.com",
+  messagingSenderId: "REEMPLAZAR",
+  appId: "REEMPLAZAR"
+};
+// Adaptador: la app usa set (reemplaza) y update (mezcla mapas anidados, como entries/alumnos).
+// En Firestore update() reemplaza mapas completos, por eso update se traduce a set con merge.
+function wrapDoc(ref){ return { get:()=>ref.get(), set:d=>ref.set(d), update:d=>ref.set(d,{merge:true}), delete:()=>ref.delete(), onSnapshot:(a,b)=>ref.onSnapshot(a,b) }; }
+function wrapDb(fs){ return { doc:p=>wrapDoc(fs.doc(p)), collection:n=>fs.collection(n) }; }
+function askLogin(auth){ return new Promise(res=>{ const box=$("#loginBox"), f=$("#loginForm"); box.hidden=false; box.style.display="flex";
+  f.onsubmit=async e=>{ e.preventDefault(); try{ await auth.signInWithEmailAndPassword($("#loginEmail").value.trim(),$("#loginPass").value); box.style.display="none"; box.hidden=true; res(); }catch(err){ $("#loginErr").textContent="Correo o contraseña incorrectos."; } }; }); }
+async function connectFirebase(){
+  if(typeof firebase==="undefined"){ showBanner("No se pudo cargar Firebase. Revisa la conexión a internet."); return null; }
+  if(FIREBASE_CONFIG.apiKey==="REEMPLAZAR"){ showBanner("Falta configurar Firebase: pega tu firebaseConfig en index.html."); return null; }
+  try{
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const auth=firebase.auth(), fs=firebase.firestore();
+    try{ await fs.enablePersistence({synchronizeTabs:true}); }catch(e){}
+    const user = await new Promise(r=>{ const u=auth.onAuthStateChanged(x=>{ u(); r(x); }); });
+    if(!user) await askLogin(auth);
+    return wrapDb(fs);
+  }catch(e){ showBanner("No se pudo conectar con Firebase."); return null; }
+}
 async function boot(){
   try{ const t=localStorage.getItem("tab"); if(t && t!=="ingreso") showTab(t); }catch(e){}
   rutInput.focus();
-  const db = await window.claude?.use?.("db"); S.dl = await window.claude?.use?.("downloads");
-  if(!db){ showBanner("No hay conexión con la base de datos. Inicia sesión en claude.ai para registrar atrasos."); renderRegistro(); return; }
+  S.dl = { save: async ({filename,data}) => { const a=document.createElement("a"); a.href=URL.createObjectURL(data); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),10000); } };
+  const db = await connectFirebase();
+  if(!db){ renderRegistro(); return; }
   S.db=db;
   db.doc("config/escuela").onSnapshot(s=>{ if(s.exists){ S.cfg={...S.cfg,...s.data()}; renderBrand(); renderAlerts(); } });
   db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
   subscribeAtrasos();
   db.collection("autorizaciones").onSnapshot(snap=>{ S.aut.clear(); snap.docs.forEach(d=>S.aut.set(d.id,d.data())); renderAut(); }, ()=>{});
   db.collection("citaciones").onSnapshot(snap=>{ S.cit.clear(); snap.docs.forEach(d=>S.cit.set(d.id,d.data())); renderAlerts(); }, ()=>{});
-  try{ const u=await window.claude.use("user"); if(u && (await u.can("data.write"))===false) showBanner("Tu cuenta solo puede ver datos. Para registrar atrasos necesitas acceso de Colaborador."); }catch(e){}
 }
 boot();
 })();
