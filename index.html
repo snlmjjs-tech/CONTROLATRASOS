@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Control de Atrasos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* Layout: kiosk-first. Top bar with tabs; the Ingreso tab is a two-column "reloj + RUT" station that stacks on phones. */
+:root{
+  --bg:#EEF2F7; --surface:#FFFFFF; --surface-2:#F5F7FB; --line:#D5DDE8;
+  --ink:#122033; --muted:#5A6A80; --navy:#17325C; --navy-ink:#FFFFFF;
+  --accent:#C98A12; --accent-soft:#FBF1DC;
+  --ok:#1F7A4D; --ok-soft:#E3F3EA; --warn:#A6561A; --warn-soft:#FBE9DC; --bad:#B3261E; --bad-soft:#FBE3E1;
+  --f-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1622; --surface:#152132; --surface-2:#1A2839; --line:#2A3B52;
+  --ink:#E7EDF5; --muted:#98A8BD; --navy:#9FC0F0; --navy-ink:#0E1622;
+  --accent:#E8B04A; --accent-soft:#3A2E17;
+  --ok:#6CCB97; --ok-soft:#173327; --warn:#F0A673; --warn-soft:#3B2618; --bad:#F2918A; --bad-soft:#3E1C1A;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1622; --surface:#152132; --surface-2:#1A2839; --line:#2A3B52;
+  --ink:#E7EDF5; --muted:#98A8BD; --navy:#9FC0F0; --navy-ink:#0E1622;
+  --accent:#E8B04A; --accent-soft:#3A2E17;
+  --ok:#6CCB97; --ok-soft:#173327; --warn:#F0A673; --warn-soft:#3B2618; --bad:#F2918A; --bad-soft:#3E1C1A;
+  color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:14px 40px}
+header.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;padding-block:4px 14px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand img,.brand .ph{width:34px;height:34px;object-fit:contain;border-radius:6px}
+.brand b{font-family:var(--f-display);font-size:22px;letter-spacing:.02em;text-transform:uppercase;color:var(--navy)}
+.brand small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46ch}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px}
+nav.tabs button{border:0;background:none;padding:7px 14px;border-radius:999px;cursor:pointer;color:var(--muted);font-weight:700;font-size:14px}
+nav.tabs button[aria-selected="true"]{background:var(--navy);color:var(--navy-ink)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:700}
+.btn:hover{border-color:var(--navy)}
+.btn.primary{background:var(--navy);border-color:var(--navy);color:var(--navy-ink)}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:4px 10px;font-size:13px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px}
+h2{font-family:var(--f-display);font-size:26px;margin:0 0 4px;letter-spacing:.01em;text-wrap:balance}
+h3{font-family:var(--f-display);font-size:19px;margin:0 0 8px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)}
+label.f{display:grid;gap:4px;font-size:13px;color:var(--muted);font-weight:700}
+label.f input,label.f select{padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);min-width:0;width:100%}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.row > *{min-width:0}
+.banner{padding:10px 14px;border-radius:8px;background:var(--warn-soft);color:var(--warn);margin-bottom:12px;font-weight:700}
+
+/* ---------- Kiosk ---------- */
+.kiosk{display:grid;grid-template-columns:1.15fr 1fr;gap:18px;align-items:stretch}
+.clockcard{background:var(--navy);color:var(--navy-ink);border-radius:14px;padding:28px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;min-width:0}
+.crest{width:min(180px,40vw);aspect-ratio:1;max-width:100%;display:grid;place-items:center}
+.crest img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,.25))}
+.crest .ph{width:100%;height:100%;border:2px dashed currentColor;border-radius:50% 50% 44% 44%;display:grid;place-items:center;font-family:var(--f-display);font-size:15px;opacity:.7;padding:18px;text-transform:uppercase;letter-spacing:.06em}
+.school{font-family:var(--f-display);font-size:clamp(20px,2.6vw,28px);font-weight:600;letter-spacing:.03em;text-transform:uppercase;text-wrap:balance;line-height:1.1}
+.clock{font-family:var(--f-display);font-weight:700;font-size:clamp(64px,10vw,128px);line-height:.9;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.clock .sec{font-size:.42em;opacity:.7;margin-left:.08em}
+.date{font-size:clamp(15px,1.6vw,19px);opacity:.9;text-transform:capitalize}
+.lateflag{display:inline-flex;gap:8px;align-items:center;background:var(--accent);color:#1B1300;border-radius:999px;padding:5px 14px;font-weight:700;font-size:14px}
+.lateflag.ontime{background:rgba(255,255,255,.16);color:inherit}
+.station{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.station h2{font-size:30px}
+.rutin{font-family:var(--f-display);font-size:clamp(34px,5vw,48px);font-weight:600;letter-spacing:.04em;text-align:center;padding:10px 12px;border:2px solid var(--line);border-radius:10px;background:var(--surface-2);width:100%;font-variant-numeric:tabular-nums}
+.rutin.invalid{border-color:var(--bad)}
+.hint{font-size:13px;color:var(--muted);text-align:center;min-height:1.4em}
+.hint.err{color:var(--bad);font-weight:700}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pad button{font-family:var(--f-display);font-size:30px;font-weight:600;padding:10px 0;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);cursor:pointer}
+.pad button:active{transform:translateY(1px)}
+.pad .ok{grid-column:span 3;background:var(--accent);border-color:var(--accent);color:#1B1300;font-size:26px;letter-spacing:.06em;text-transform:uppercase}
+.pad .alt{font-size:20px;color:var(--muted)}
+.result{border-radius:12px;padding:20px;display:grid;gap:6px;text-align:center}
+.result.ok{background:var(--ok-soft);color:var(--ok)}
+.result.dup{background:var(--warn-soft);color:var(--warn)}
+.result .who{font-family:var(--f-display);font-size:34px;font-weight:700;line-height:1.05;color:var(--ink);text-wrap:balance}
+.result .meta{color:var(--ink);font-size:17px}
+.result .count{font-weight:700}
+.newform{display:grid;gap:10px}
+.kfoot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-top:10px}
+body.kiosk-mode header.top nav, body.kiosk-mode .kfoot .adm{display:none}
+body.kiosk-mode .wrap{max-width:1400px}
+
+/* ---------- Tables / reports ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-block:12px}
+.stat{background:var(--surface-2);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font-family:var(--f-display);font-size:30px;line-height:1;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start}
+.grid2 > *{min-width:0}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{background:var(--surface-2);font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);position:sticky;top:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr:last-child td{border-bottom:0}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:700}
+.pill.w{background:var(--warn-soft);color:var(--warn)}
+.pill.b{background:var(--bad-soft);color:var(--bad)}
+.pill.o{background:var(--ok-soft);color:var(--ok)}
+.scroll{max-height:520px;overflow:auto}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+.rank li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.rank li span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank{list-style:none;margin:0;padding:0}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:22px;text-align:center;display:grid;gap:8px;justify-items:center}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:700;z-index:50;max-width:calc(100% - 32px)}
+.inline-confirm{display:inline-flex;gap:6px;align-items:center}
+.badge{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--bad);color:#fff;font-size:12px;margin-left:6px}
+.alertbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-weight:700}
+body.kiosk-mode .alertbar{display:none}
+.citalert{background:var(--bad);color:#fff;border-radius:10px;padding:12px 14px;font-family:var(--f-display);font-size:26px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;line-height:1.1}
+tr.citform td{background:var(--surface-2);white-space:normal}
+.citform .row{align-items:end}
+.citform input{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+@media (max-width:860px){.kiosk,.grid2{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><span id="brandLogo"></span><div><b>Control de Atrasos</b><small id="brandName"></small></div></div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="ingreso" aria-selected="true">Ingreso</button>
+      <button role="tab" data-tab="registro" aria-selected="false">Registro</button>
+      <button role="tab" data-tab="citaciones" aria-selected="false">Citaciones<span class="badge" id="citBadge" hidden>0</span></button>
+      <button role="tab" data-tab="autorizaciones" aria-selected="false">Horarios especiales</button>
+      <button role="tab" data-tab="alumnos" aria-selected="false">Alumnos</button>
+      <button role="tab" data-tab="config" aria-selected="false">Configuración</button>
+    </nav>
+  </header>
+  <div id="dbBanner" class="banner" hidden></div>
+  <div id="alertBar" class="alertbar" hidden><span id="alertTxt"></span><button class="btn sm" id="alertGo">Ver citaciones</button></div>
+
+  <!-- INGRESO -->
+  <section id="tab-ingreso">
+    <div class="kiosk">
+      <div class="clockcard">
+        <div class="crest" id="crest"></div>
+        <div class="school" id="schoolName"></div>
+        <div class="clock" id="clock" aria-live="off">--:--<span class="sec">--</span></div>
+        <div class="date" id="date"></div>
+        <div class="lateflag" id="lateflag"></div>
+      </div>
+      <div class="station">
+        <div id="stEntry">
+          <h2>Registro de atraso</h2>
+          <p class="muted" style="margin:0 0 12px">Ingresa tu RUT sin puntos y presiona Registrar.</p>
+          <form id="rutForm" autocomplete="off" style="display:grid;gap:10px">
+            <input id="rutInput" class="rutin" inputmode="text" placeholder="12345678-9" maxlength="12" aria-label="RUT del alumno">
+            <div class="hint" id="rutHint"></div>
+            <div class="pad" id="pad">
+              <button type="button">1</button><button type="button">2</button><button type="button">3</button>
+              <button type="button">4</button><button type="button">5</button><button type="button">6</button>
+              <button type="button">7</button><button type="button">8</button><button type="button">9</button>
+              <button type="button">K</button><button type="button">0</button><button type="button" class="alt" data-k="del" aria-label="Borrar">⌫</button>
+              <button type="submit" class="ok">Registrar</button>
+            </div>
+          </form>
+        </div>
+        <div id="stNew" hidden>
+          <h2>Alumno no registrado</h2>
+          <p class="muted" style="margin:0 0 12px">El RUT <b id="newRutLbl"></b> no está en la base. Completa tus datos para registrar el atraso.</p>
+          <form id="newForm" class="newform" autocomplete="off">
+            <label class="f">Nombre completo<input id="newNombre" required placeholder="Nombres y apellidos"></label>
+            <label class="f">Curso<input id="newCurso" list="cursosList" required placeholder="Ej: 3° Medio A"></label>
+            <div class="row"><button class="btn primary" type="submit" id="newSubmit">Guardar y registrar atraso</button><button class="btn" type="button" id="newCancel">Cancelar</button></div>
+          </form>
+        </div>
+        <div id="stResult" hidden></div>
+      </div>
+    </div>
+    <div class="kfoot"><span id="todayCount">Atrasos de hoy: —</span><span><button class="btn sm" id="kioskBtn">Modo kiosco</button></span></div>
+  </section>
+
+  <!-- REGISTRO -->
+  <section id="tab-registro" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <div><h2>Registro de atrasos</h2><p class="muted" style="margin:0">Filtra por fechas, curso o alumno. Los atrasos anulados no se cuentan.</p></div>
+        <button class="btn" id="exportBtn">Exportar a Excel</button>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <label class="f">Desde<input type="date" id="fDesde"></label>
+        <label class="f">Hasta<input type="date" id="fHasta"></label>
+        <label class="f">Curso<select id="fCurso"><option value="">Todos</option></select></label>
+        <label class="f" style="flex:1 1 200px">Buscar<input id="fTexto" placeholder="Nombre o RUT"></label>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="grid2">
+        <div class="tbl scroll"><table><thead><tr><th>Fecha</th><th>Hora</th><th class="num">Min.</th><th>RUT</th><th>Alumno</th><th>Curso</th><th></th></tr></thead><tbody id="regBody"></tbody></table></div>
+        <div class="panel" style="background:var(--surface-2)"><h3>Más atrasos en el período</h3><ul class="rank" id="rank"></ul></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CITACIONES -->
+  <section id="tab-citaciones" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <div><h2>Citaciones de apoderados</h2><p class="muted" style="margin:0" id="citSub"></p></div>
+        <label class="f" style="flex:0 1 220px">Mostrar<select id="citFiltro"><option value="pend">Pendientes de citar</option><option value="citado">Citados (esperando asistencia)</option><option value="cerrado">Cerradas</option><option value="todas">Todas</option></select></label>
+      </div>
+      <div class="tbl" style="margin-top:12px"><table><thead><tr><th>Alumno</th><th>Curso</th><th>Período</th><th class="num">Atrasos</th><th>Estado</th><th></th></tr></thead><tbody id="citBody"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- HORARIOS ESPECIALES -->
+  <section id="tab-autorizaciones" hidden>
+    <div class="grid2">
+      <div class="panel">
+        <h2>Horarios especiales autorizados</h2>
+        <p class="muted" style="margin:0 0 12px">Alumnos que Inspectoría autoriza a ingresar después de la hora normal. Si llegan antes de su hora autorizada no se registra atraso; si llegan después, los minutos se cuentan desde su hora autorizada.</p>
+        <div class="tbl"><table><thead><tr><th>Alumno</th><th>Curso</th><th class="num">Ingreso</th><th>Días</th><th>Vigencia</th><th>Motivo</th><th>Estado</th><th></th></tr></thead><tbody id="autBody"></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h3>Autorizar horario</h3>
+        <form id="autForm" class="newform" autocomplete="off">
+          <label class="f">RUT del alumno<input id="autRut" required placeholder="12345678-9"></label>
+          <div class="muted" id="autWho" style="font-size:13px;min-height:1.2em"></div>
+          <label class="f">Hora de ingreso autorizada<input id="autHora" type="time" required value="09:00"></label>
+          <div class="f" style="display:grid;gap:4px;font-size:13px;color:var(--muted);font-weight:700">Días<div class="row" id="autDias" style="gap:12px;font-weight:400;color:var(--ink)">
+            <label><input type="checkbox" value="1" checked> Lun</label><label><input type="checkbox" value="2" checked> Mar</label><label><input type="checkbox" value="3" checked> Mié</label><label><input type="checkbox" value="4" checked> Jue</label><label><input type="checkbox" value="5" checked> Vie</label></div></div>
+          <div class="row"><label class="f" style="flex:1 1 130px">Desde<input id="autDesde" type="date"></label><label class="f" style="flex:1 1 130px">Hasta (opcional)<input id="autHasta" type="date"></label></div>
+          <label class="f">Motivo<input id="autMotivo" placeholder="Ej: tratamiento médico, traslado rural"></label>
+          <button class="btn primary" type="submit">Guardar horario especial</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ALUMNOS -->
+  <section id="tab-alumnos" hidden>
+    <div class="grid2">
+      <div class="panel">
+        <div class="row" style="justify-content:space-between"><div><h2>Base de alumnos</h2><p class="muted" style="margin:0" id="alCount">—</p></div>
+          <label class="f" style="flex:0 1 260px">Buscar<input id="aTexto" placeholder="Nombre, RUT o curso"></label></div>
+        <div class="tbl scroll" style="margin-top:12px"><table><thead><tr><th>RUT</th><th>Nombre</th><th>Curso</th><th class="num">Atrasos año</th><th></th></tr></thead><tbody id="alBody"></tbody></table></div>
+      </div>
+      <div style="display:grid;gap:14px">
+        <div class="panel">
+          <h3>Cargar desde Excel</h3>
+          <div class="drop" id="drop">
+            <span>Arrastra un archivo <b>.xlsx</b>, <b>.xls</b> o <b>.csv</b></span>
+            <label class="btn">Elegir archivo<input type="file" id="xlsFile" accept=".xlsx,.xls,.csv" hidden></label>
+            <span class="muted" style="font-size:13px">Lee todas las hojas. El curso se toma del encabezado de cada hoja (ej. CURSO: PRIMER AÑO "A" → 1° Medio A). Columnas: <b>RUN/RUT</b> y <b>Nombre</b>. Los alumnos con fecha de retiro no se cargan.</span>
+          </div>
+          <div id="impPreview" style="margin-top:12px"></div>
+        </div>
+        <div class="panel">
+          <h3>Agregar alumno</h3>
+          <form id="addForm" class="newform" autocomplete="off">
+            <label class="f">RUT<input id="addRut" required placeholder="12345678-9"></label>
+            <label class="f">Nombre completo<input id="addNombre" required></label>
+            <label class="f">Curso<input id="addCurso" list="cursosList" required></label>
+            <button class="btn primary" type="submit">Guardar alumno</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONFIG -->
+  <section id="tab-config" hidden>
+    <div class="panel" style="max-width:640px">
+      <h2>Configuración</h2>
+      <form id="cfgForm" class="newform" style="margin-top:10px">
+        <label class="f">Nombre del establecimiento<input id="cfgNombre"></label>
+        <label class="f">Hora de ingreso (desde cuándo cuenta como atraso)<input id="cfgHora" type="time"></label>
+        <div class="row">
+          <label class="f" style="flex:1 1 140px">Atrasos para citar apoderado<input id="cfgUmbral" type="number" min="1" max="20"></label>
+          <label class="f" style="flex:1 1 180px">Se cuentan por<select id="cfgPeriodo"><option value="mes">Mes</option><option value="semestre">Semestre</option><option value="anio">Año escolar</option></select></label>
+        </div>
+        <h3 style="margin-top:8px">Carta de citación</h3>
+        <p class="muted" style="margin:0;font-size:13px">1° y 2° Medio</p>
+        <div class="row">
+          <label class="f" style="flex:2 1 220px">Firma (nombre)<input id="cfgFirma12"></label>
+          <label class="f" style="flex:1 1 160px">Cargo<input id="cfgCargo12"></label>
+        </div>
+        <p class="muted" style="margin:0;font-size:13px">3° y 4° Medio</p>
+        <div class="row">
+          <label class="f" style="flex:2 1 220px">Firma (nombre)<input id="cfgFirma34"></label>
+          <label class="f" style="flex:1 1 160px">Cargo<input id="cfgCargo34"></label>
+        </div>
+        <div class="row">
+          <label class="f" style="flex:1 1 160px">Ciudad<input id="cfgCiudad"></label>
+          <label class="f" style="flex:1 1 160px">Hora de citación por defecto<input id="cfgHoraCit" type="time"></label>
+        </div>
+        <h3 style="margin-top:8px">Boucher de ingreso</h3>
+        <div class="row" style="align-items:center">
+          <label class="f" style="flex:1 1 160px">Ancho del rollo<select id="cfgPapel"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
+          <label style="flex:2 1 220px;display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="cfgVAuto"> Generar el boucher automáticamente al registrar</label>
+        </div>
+        <div class="row" style="align-items:center">
+          <div class="crest" id="cfgCrest" style="width:96px;color:var(--navy)"></div>
+          <label class="btn">Subir insignia<input type="file" id="cfgLogo" accept="image/*" hidden></label>
+          <button class="btn danger" type="button" id="cfgLogoDel">Quitar insignia</button>
+        </div>
+        <div><button class="btn primary" type="submit">Guardar configuración</button></div>
+      </form>
+      <p class="muted" style="font-size:13px;margin-top:14px">Los datos se guardan en línea y los ven todas las personas con acceso a esta página (inspectores, portería). El computador de ingreso debe tener la página abierta con una cuenta que tenga permiso de Colaborador o superior.</p>
+    </div>
+  </section>
+</div>
+<datalist id="cursosList"></datalist>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const DEF_NAME = "Instituto Comercial Alberto Valenzuela Llanos";
+const S = { db:null, dl:null, cfg:{nombre:DEF_NAME, hora:"08:10", logo:"", umbral:3, periodo:"mes", firma12:"Claudio Valenzuela Fuentes", cargo12:"Inspector General", firma34:"Luis Cádiz Fuenzalida", cargo34:"Inspector General", ciudad:"San Fernando", horaCit:"08:30"}, cit:new Map(), aut:new Map(), cursos:new Map(), alumnos:new Map(), dias:new Map(), year:new Date().getFullYear(), pendingRut:null, resetT:null };
+
+/* ---------- utils ---------- */
+const pad2 = n => String(n).padStart(2,"0");
+const dateKey = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>t.hidden=true,3200); }
+function cleanRut(s){ return String(s??"").toUpperCase().replace(/[^0-9K]/g,""); }
+function dvOf(body){ let sum=0,m=2; for(let i=body.length-1;i>=0;i--){ sum+=Number(body[i])*m; m=m===7?2:m+1; } const r=11-(sum%11); return r===11?"0":r===10?"K":String(r); }
+function normRut(s){ const c=cleanRut(s); if(c.length<2) return null; const body=c.slice(0,-1).replace(/^0+/,""), dv=c.slice(-1); if(!/^\d{6,9}$/.test(body)) return null; if(dvOf(body)!==dv) return null; return body+"-"+dv; }
+function fmtRut(r){ const [b,d]=r.split("-"); return b.replace(/\B(?=(\d{3})+(?!\d))/g,".")+"-"+d; }
+function normCurso(s){ const k=cursoFromText(s); return k || String(s??"").trim().replace(/\s+/g," "); }
+function slug(c){ return (c.normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/°|º/g,"o").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").toLowerCase()) || "sin-curso"; }
+function titleName(s){ return String(s??"").trim().replace(/\s+/g," ").toLowerCase().replace(/(^|[\s'-])(\p{L})/gu,(m,a,b)=>a+b.toUpperCase()); }
+
+/* ---------- tabs ---------- */
+document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+function showTab(t){ document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","citaciones","autorizaciones","alumnos","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
+$("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.classList.contains("kiosk-mode"); document.body.classList.toggle("kiosk-mode",on); $("#kioskBtn").textContent = on ? "Salir de modo kiosco" : "Modo kiosco"; if(on){ try{ await document.documentElement.requestFullscreen?.(); }catch(e){} try{ await navigator.wakeLock?.request("screen"); }catch(e){} } else { try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch(e){} } $("#rutInput").focus(); });
+
+/* ---------- clock ---------- */
+const fmtDate = new Intl.DateTimeFormat("es-CL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+let lastDay = dateKey(new Date());
+function tick(){ const d=new Date(); $("#clock").innerHTML = `${pad2(d.getHours())}:${pad2(d.getMinutes())}<span class="sec">${pad2(d.getSeconds())}</span>`; $("#date").textContent = fmtDate.format(d);
+  const m=minsLate(d), lf=$("#lateflag"); if(!esDiaHabil(d)){ lf.className="lateflag ontime"; lf.textContent="Hoy no hay clases"; } else if(m>0){ lf.className="lateflag"; lf.textContent=`Atraso: ${m} min desde las ${S.cfg.hora}`; } else { lf.className="lateflag ontime"; lf.textContent=`Hora de ingreso: ${S.cfg.hora}`; }
+  const k=dateKey(d); if(k!==lastDay){ lastDay=k; renderToday(); } }
+setInterval(tick,1000); tick();
+
+/* ---------- branding ---------- */
+function crestHTML(){ return S.cfg.logo ? `<img src="${esc(S.cfg.logo)}" alt="Insignia del establecimiento">` : `<div class="ph">Insignia<br>del colegio</div>`; }
+function renderBrand(){ $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = S.cfg.logo?`<img src="${esc(S.cfg.logo)}" alt="" style="width:34px;height:34px;object-fit:contain">`:""; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; } tick(); }
+renderBrand();
+
+/* ---------- data model ----------
+   cursos/{slug}   {nombre, alumnos:{ "12345678-9": {nombre} }}
+   atrasos/{fecha} {fecha, entries:{ id: {rut,nombre,curso,hora,min,ts,anulado?} }}
+   config/escuela  {nombre, hora, logo} */
+function rebuildAlumnos(){ S.alumnos.clear(); for(const [sl,c] of S.cursos){ for(const [rut,a] of Object.entries(c.alumnos||{})) S.alumnos.set(rut,{rut,nombre:a.nombre,curso:c.nombre,slug:sl}); } $("#cursosList").innerHTML=[...S.cursos.values()].map(c=>`<option value="${esc(c.nombre)}">`).sort().join(""); const fc=$("#fCurso"), v=fc.value; fc.innerHTML=`<option value="">Todos</option>`+[...S.cursos.values()].map(c=>c.nombre).sort().map(n=>`<option>${esc(n)}</option>`).join(""); fc.value=v; }
+function allEntries(){ const out=[]; for(const [f,d] of S.dias){ for(const [id,e] of Object.entries(d.entries||{})){ if(!e.anulado) out.push({...e,id,fecha:f}); } } return out; }
+function countsYear(){ const m=new Map(); for(const e of allEntries()) m.set(e.rut,(m.get(e.rut)||0)+1); return m; }
+
+async function writeRetry(fn){ try{ return await fn(); } catch(e){ if(e?.code==="unavailable"||e?.code==="resource_exhausted"){ await new Promise(r=>setTimeout(r,600+Math.random()*900)); return await fn(); } throw e; } }
+function dbErr(e){ const c=e?.code; if(c==="invalid_argument") return "No tienes permiso para guardar datos en esta página. Pide acceso de Colaborador."; if(c==="quota_exceeded") return "La base de datos está llena. Elimina registros antiguos."; return "No se pudo guardar. Revisa la conexión e intenta de nuevo."; }
+
+async function saveCursoDoc(sl, nombre, alumnos){ await writeRetry(()=>S.db.doc("cursos/"+sl).set({nombre, alumnos})); }
+async function mergeIntoCurso(sl, nombre, add){ const ref=S.db.doc("cursos/"+sl); const snap=await ref.get(); if(snap.exists) await writeRetry(()=>ref.update({nombre, alumnos:add})); else await writeRetry(()=>ref.set({nombre, alumnos:add})); }
+async function removeFromCurso(sl, ruts){ const c=S.cursos.get(sl); if(!c) return; const al={...(c.alumnos||{})}; ruts.forEach(r=>delete al[r]); if(Object.keys(al).length===0) await writeRetry(()=>S.db.doc("cursos/"+sl).delete()); else await saveCursoDoc(sl,c.nombre,al); }
+async function upsertAlumno(rut,nombre,curso){ const cn=normCurso(curso), sl=slug(cn), prev=S.alumnos.get(rut); if(prev && prev.slug!==sl) await removeFromCurso(prev.slug,[rut]); await mergeIntoCurso(sl,cn,{[rut]:{nombre}}); S.alumnos.set(rut,{rut,nombre,curso:cn,slug:sl}); }
+
+async function addAtraso(al){ const d=new Date(), fecha=dateKey(d), id=d.getTime().toString(36)+Math.random().toString(36).slice(2,6);
+  const entry={rut:al.rut,nombre:al.nombre,curso:al.curso,hora:`${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`,min:minsLate(d,al.rut),horaIngreso:horaIngreso(al.rut,d),ts:d.toISOString()}; const au=autorizacionVigente(al.rut,d); if(au) entry.autorizado=au.hora;
+  const ref=S.db.doc("atrasos/"+fecha);
+  const snap=await ref.get();
+  if(snap.exists) await writeRetry(()=>ref.update({entries:{[id]:entry}}));
+  else await writeRetry(()=>ref.set({fecha, entries:{[id]:entry}}));
+  return entry; }
+
+/* ---------- kiosk flow ---------- */
+const rutInput=$("#rutInput");
+function setHint(t,err){ const h=$("#rutHint"); h.textContent=t||""; h.className="hint"+(err?" err":""); rutInput.classList.toggle("invalid",!!err); }
+function fmtTyping(v){ const c=cleanRut(v); if(c.length<2) return c; return c.slice(0,-1)+"-"+c.slice(-1); }
+rutInput.addEventListener("input",()=>{ rutInput.value=fmtTyping(rutInput.value); setHint(""); });
+$("#pad").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b||b.type==="submit") return; const c=cleanRut(rutInput.value); rutInput.value = fmtTyping(b.dataset.k==="del" ? c.slice(0,-1) : (c+b.textContent).slice(0,10)); setHint(""); rutInput.focus(); });
+function showStage(s){ $("#stEntry").hidden=s!=="entry"; $("#stNew").hidden=s!=="new"; $("#stResult").hidden=s!=="result"; }
+function resetKiosk(){ clearTimeout(S.resetT); S.pendingRut=null; S.voucher=null; rutInput.value=""; setHint(""); showStage("entry"); if(!$("#tab-ingreso").hidden) rutInput.focus(); }
+
+$("#rutForm").addEventListener("submit", async e=>{ e.preventDefault(); if(!S.db){ setHint("Sin conexión a la base de datos.",true); return; }
+  const rut=normRut(rutInput.value); if(!rut){ setHint("RUT inválido. Revisa el número y el dígito verificador.",true); return; }
+  const al=S.alumnos.get(rut); const now=new Date();
+  if(!esDiaHabil(now)){ setHint("Hoy no es día de clases: no se registran atrasos.",true); return; }
+  if(minsLate(now,rut)<=0){ const au=autorizacionVigente(rut,now); S.voucher=null; if(au && al){ const hh=`${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`; setVoucher(al,{hora:hh,ts:now.toISOString()},{tipo:"autorizado",horaAut:au.hora,motivo:au.motivo||""}); } showInfo(al||{rut,nombre:"RUT "+fmtRut(rut),curso:""}, au ? `Ingreso autorizado por Inspectoría hasta las ${au.hora}${au.motivo?` (${au.motivo})`:""}. No se registra atraso.` : `Llegaste a tiempo (ingreso hasta las ${S.cfg.hora}). No se registra atraso.`); return; }
+  if(!al){ S.pendingRut=rut; $("#newRutLbl").textContent=fmtRut(rut); $("#newNombre").value=""; $("#newCurso").value=""; showStage("new"); $("#newNombre").focus(); return; }
+  await doRegister(al); });
+
+$("#newCancel").addEventListener("click",resetKiosk);
+$("#newForm").addEventListener("submit", async e=>{ e.preventDefault(); const rut=S.pendingRut; const nombre=titleName($("#newNombre").value), curso=normCurso($("#newCurso").value); if(!rut||!nombre||!curso) return; const b=$("#newSubmit"); b.disabled=true;
+  try{ await upsertAlumno(rut,nombre,curso); await doRegister({rut,nombre,curso}, true); } catch(err){ toast(dbErr(err)); } finally{ b.disabled=false; } });
+
+async function doRegister(al, isNew){
+  const hoy=S.dias.get(dateKey(new Date())); const prev=Object.values(hoy?.entries||{}).find(x=>x.rut===al.rut && !x.anulado);
+  if(prev){ const pid=Object.entries(hoy.entries).find(([k,x])=>x===prev)?.[0]; setVoucher(al,{...prev,id:pid,fecha:dateKey(new Date())},{tipo:"atraso"}); showResult("dup", al, `Ya registraste tu atraso hoy a las ${prev.hora.slice(0,5)}.`); return; }
+  try{ const en=await addAtraso(al); const d=new Date(); const mk=dateKey(d).slice(0,7);
+    const pk=periodoKey(dateKey(d)); const all=allEntries().filter(x=>x.rut===al.rut); const has=all.some(x=>x.ts===en.ts)?0:1; const nPer=all.filter(x=>periodoKey(x.fecha)===pk).length + has; const nAnio=all.length + has;
+    setVoucher(al,{...en,fecha:dateKey(d)},{tipo:"atraso",nPer:S.cfg.periodo==="mes"?nPer:null});
+    showResult("ok", al, `Atraso registrado a las ${en.hora.slice(0,5)} · ${en.min} min${en.autorizado?` (horario autorizado ${en.autorizado})`:""}`, nPer, nAnio, isNew);
+  } catch(err){ setHint(dbErr(err),true); showStage("entry"); } }
+
+function showInfo(al, line){ const r=$("#stResult"); r.innerHTML=`<div class="result ok"><div>Sin atraso</div><div class="who">${esc(al.nombre)}</div>${al.curso?`<div class="meta">${esc(al.curso)}</div>`:""}<div class="meta">${esc(line)}</div></div>${S.voucher?voucherBtns():`<button class="btn" id="resOk" style="justify-self:center">Siguiente alumno</button>`}`; r.style.display="grid"; r.style.gap="12px"; showStage("result"); $("#resOk").addEventListener("click",resetKiosk); $("#resOk").focus(); clearTimeout(S.resetT); S.resetT=setTimeout(resetKiosk,S.voucher?8000:5000); wireVoucher(true); }
+function showResult(kind, al, line, nMes, nAnio, isNew){
+  const r=$("#stResult");
+  const u=umbral(), per={mes:"del mes",semestre:"del semestre",anio:"del año"}[S.cfg.periodo||"mes"];
+  const cnt = nMes!=null ? `<div class="count">${nMes}° atraso ${per}${S.cfg.periodo==="anio"?"":` · ${nAnio} en el año`}</div>${nMes>=u?`<div class="citalert">Alumno con ${nMes} atrasos<br>Citar apoderado</div>`:""}` : "";
+  r.innerHTML=`<div class="result ${kind}"><div>${kind==="ok"?"✓ Registrado":"Ya registrado"}</div><div class="who">${esc(al.nombre)}</div><div class="meta">${esc(al.curso)} · ${esc(fmtRut(al.rut))}</div><div class="meta">${esc(line)}</div>${cnt}${isNew?`<div class="muted" style="font-size:13px">Alumno agregado a la base.</div>`:""}</div>${S.voucher?voucherBtns():`<button class="btn" id="resOk" style="justify-self:center">Siguiente alumno</button>`}`;
+  r.style.display="grid"; r.style.gap="12px";
+  showStage("result"); $("#resOk").addEventListener("click",resetKiosk); $("#resOk").focus();
+  clearTimeout(S.resetT); S.resetT=setTimeout(resetKiosk, nMes>=umbral()?12000:7000); wireVoucher(kind==="ok"); }
+
+function renderToday(){ const d=S.dias.get(dateKey(new Date())); const n=Object.values(d?.entries||{}).filter(x=>!x.anulado).length; $("#todayCount").textContent=`Atrasos de hoy: ${n}`; }
+
+/* ---------- registro ---------- */
+(function initFilters(){ const d=new Date(); $("#fDesde").value=dateKey(new Date(d.getFullYear(),d.getMonth(),1)); $("#fHasta").value=dateKey(d); })();
+["#fDesde","#fHasta","#fCurso","#fTexto"].forEach(s=>$(s).addEventListener("input",()=>{ if(s!=="#fTexto") ensureYear(); renderRegistro(); }));
+function ensureYear(){ const y=Number(($("#fDesde").value||"").slice(0,4)); if(y && y<S.year){ S.year=y; subscribeAtrasos(); } }
+function filtered(){ const a=$("#fDesde").value||"0000", b=$("#fHasta").value||"9999", c=$("#fCurso").value, t=$("#fTexto").value.trim().toLowerCase(), tc=cleanRut(t);
+  return allEntries().filter(e=>e.fecha>=a && e.fecha<=b && (!c||e.curso===c) && (!t || e.nombre.toLowerCase().includes(t) || (tc.length>2 && e.rut.replace("-","").includes(tc)))).sort((x,y)=>y.ts.localeCompare(x.ts)); }
+function renderRegistro(){ if($("#tab-registro").hidden) return; const rows=filtered();
+  const uniq=new Set(rows.map(r=>r.rut)); const avg=rows.length?Math.round(rows.reduce((s,r)=>s+(r.min||0),0)/rows.length):0; const byR=new Map(); rows.forEach(r=>{ const o=byR.get(r.rut)||{n:0,nombre:r.nombre,curso:r.curso}; o.n++; byR.set(r.rut,o); }); const reinc=[...byR.values()].filter(o=>o.n>=3).length;
+  $("#stats").innerHTML=[["Atrasos",rows.length],["Alumnos",uniq.size],["Promedio min.",avg],["Con 3 o más",reinc]].map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+  $("#regBody").innerHTML = rows.length ? rows.slice(0,800).map(r=>`<tr><td>${r.fecha.split("-").reverse().join("-")}</td><td>${esc(r.hora)}</td><td class="num">${r.min??""}${r.autorizado?` <span class="pill w" title="Horario especial">${esc(r.autorizado)}</span>`:""}</td><td>${esc(fmtRut(r.rut))}</td><td>${esc(r.nombre)}</td><td>${esc(r.curso)}</td><td><button class="btn sm danger" data-anular="${esc(r.fecha)}|${esc(r.id)}">Anular</button></td></tr>`).join("") : `<tr><td colspan="7" class="empty">${S.db?"No hay atrasos en este período. Se registran desde la pestaña Ingreso.":"Cargando registros…"}</td></tr>`;
+  const top=[...byR.values()].sort((a,b)=>b.n-a.n).slice(0,12);
+  $("#rank").innerHTML = top.length ? top.map(o=>`<li><span>${esc(o.nombre)} <span class="muted">· ${esc(o.curso)}</span></span><span class="pill ${o.n>=5?"b":o.n>=3?"w":"o"}">${o.n}</span></li>`).join("") : `<li class="muted">Sin datos</li>`; }
+$("#regBody").addEventListener("click", async e=>{ const b=e.target.closest("button[data-anular]"); if(!b) return;
+  if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar?"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.confirm; b.textContent="Anular"; } },3000); return; }
+  const [f,id]=b.dataset.anular.split("|"); b.disabled=true; try{ await writeRetry(()=>S.db.doc("atrasos/"+f).update({entries:{[id]:{anulado:true}}})); toast("Atraso anulado"); } catch(err){ toast(dbErr(err)); b.disabled=false; } });
+
+$("#exportBtn").addEventListener("click", async ()=>{ const rows=filtered(); if(!rows.length){ toast("No hay registros para exportar"); return; }
+  const cnt=new Map(); rows.forEach(r=>cnt.set(r.rut,(cnt.get(r.rut)||0)+1));
+  const ws1=XLSX.utils.json_to_sheet(rows.slice().reverse().map(r=>({Fecha:r.fecha,Hora:r.hora,"Minutos de atraso":r.min??0,RUT:fmtRut(r.rut),Nombre:r.nombre,Curso:r.curso})));
+  const ws2=XLSX.utils.json_to_sheet([...cnt].map(([rut,n])=>{ const r=rows.find(x=>x.rut===rut); return {RUT:fmtRut(rut),Nombre:r.nombre,Curso:r.curso,Atrasos:n}; }).sort((a,b)=>b.Atrasos-a.Atrasos));
+  ws1["!cols"]=[{wch:11},{wch:9},{wch:10},{wch:13},{wch:36},{wch:16}]; ws2["!cols"]=[{wch:13},{wch:36},{wch:16},{wch:9}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws1,"Atrasos"); XLSX.utils.book_append_sheet(wb,ws2,"Resumen por alumno");
+  const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+  if(!S.dl){ toast("Este visor no permite descargar archivos"); return; }
+  try{ await S.dl.save({filename:`atrasos_${$("#fDesde").value}_a_${$("#fHasta").value}.xlsx`, data:new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})}); } catch(err){ if(err?.code!=="declined") toast("No se pudo descargar el archivo"); } });
+
+/* ---------- alumnos ---------- */
+$("#aTexto").addEventListener("input",renderAlumnos);
+function renderAlumnos(){ if($("#tab-alumnos").hidden) return; const t=$("#aTexto").value.trim().toLowerCase(), tc=cleanRut(t); const cy=countsYear();
+  const list=[...S.alumnos.values()].filter(a=>!t || a.nombre.toLowerCase().includes(t) || a.curso.toLowerCase().includes(t) || (tc.length>2 && a.rut.replace("-","").includes(tc))).sort((a,b)=>a.curso.localeCompare(b.curso,"es",{numeric:true})||a.nombre.localeCompare(b.nombre,"es"));
+  $("#alCount").textContent = `${S.alumnos.size} alumnos en ${S.cursos.size} cursos`;
+  $("#alBody").innerHTML = list.length ? list.slice(0,1500).map(a=>{ const n=cy.get(a.rut)||0; return `<tr data-rut="${esc(a.rut)}"><td>${esc(fmtRut(a.rut))}</td><td>${esc(a.nombre)}</td><td>${esc(a.curso)}</td><td class="num">${n?`<span class="pill ${n>=5?"b":n>=3?"w":"o"}">${n}</span>`:"0"}</td><td><button class="btn sm" data-edit>Editar</button> <button class="btn sm danger" data-del>Eliminar</button></td></tr>`; }).join("")
+    : `<tr><td colspan="5" class="empty">${S.alumnos.size?"Ningún alumno coincide con la búsqueda.":"Aún no hay alumnos. Carga la nómina desde un Excel o agrégalos uno a uno; también se agregan solos cuando un alumno nuevo registra su atraso."}</td></tr>`; }
+$("#alBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-rut]"); if(!tr) return; const a=S.alumnos.get(tr.dataset.rut); if(!a) return;
+  if(e.target.closest("[data-edit]")){ tr.innerHTML=`<td>${esc(fmtRut(a.rut))}</td><td><input id="edN" value="${esc(a.nombre)}" style="width:100%;padding:4px 6px"></td><td><input id="edC" list="cursosList" value="${esc(a.curso)}" style="width:120px;padding:4px 6px"></td><td></td><td><button class="btn sm primary" data-save>Guardar</button> <button class="btn sm" data-cancel>Cancelar</button></td>`; return; }
+  if(e.target.closest("[data-cancel]")){ renderAlumnos(); return; }
+  if(e.target.closest("[data-save]")){ const n=titleName(tr.querySelector("#edN").value), c=normCurso(tr.querySelector("#edC").value); if(!n||!c) return; try{ await upsertAlumno(a.rut,n,c); toast("Alumno actualizado"); }catch(err){ toast(dbErr(err)); } return; }
+  const d=e.target.closest("[data-del]"); if(d){ if(!d.dataset.confirm){ d.dataset.confirm="1"; d.textContent="¿Confirmar?"; return; } try{ await removeFromCurso(a.slug,[a.rut]); toast("Alumno eliminado"); }catch(err){ toast(dbErr(err)); } } });
+$("#addForm").addEventListener("submit", async e=>{ e.preventDefault(); const rut=normRut($("#addRut").value); if(!rut){ toast("RUT inválido"); return; } try{ await upsertAlumno(rut,titleName($("#addNombre").value),$("#addCurso").value); e.target.reset(); toast("Alumno guardado"); }catch(err){ toast(dbErr(err)); } });
+
+/* ---------- Excel import ---------- */
+const drop=$("#drop");
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+drop.addEventListener("drop",e=>{ const f=e.dataTransfer.files[0]; if(f) readExcel(f); });
+$("#xlsFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) readExcel(f); e.target.value=""; });
+let IMP=null;
+function readExcel(file){ const fr=new FileReader(); fr.onload=()=>{ try{ parseRows(XLSX.read(new Uint8Array(fr.result),{type:"array"}), file.name); }catch(err){ $("#impPreview").innerHTML=`<div class="banner">No se pudo leer el archivo. Verifica que sea un Excel o CSV válido.</div>`; } }; fr.readAsArrayBuffer(file); }
+/* Curso escrito sobre la tabla: 'CURSO: PRIMER AÑO "A"', '1° Medio A', '1ro medio a', o nombre de hoja '1°A' */
+const ORD={PRIMER:1,PRIMERO:1,SEGUNDO:2,TERCER:3,TERCERO:3,CUARTO:4,QUINTO:5,SEXTO:6,SEPTIMO:7,OCTAVO:8};
+function cursoFromText(t){
+  const s=String(t??"").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[“”«»]/g,'"').replace(/\s+/g," ").trim();
+  if(!s) return "";
+  let m=s.match(/\b(PRIMERO?|SEGUNDO|TERCERO?|CUARTO|QUINTO|SEXTO|SEPTIMO|OCTAVO)\s+(?:ANO\s+)?(MEDIO|BASICO)?\s*["']?\s*([A-L])\b/);
+  if(m){ const n=ORD[m[1]]; const niv=m[2]==="BASICO"||(!m[2]&&n>4)?"Básico":"Medio"; return `${n}° ${niv} ${m[3]}`; }
+  m=s.match(/(?:^|[^\d])(\d{1,2})\s*(°|º|RO|DO|ER|TO|MO|VO|NO)?\s*(?:ANO\s+)?(MEDIO|MED\.?|M\.|BASICO|BAS\.?|B\.)?\s*["']?\s*([A-L])\b/);
+  if(m && (m[2]||m[3])){ const n=Number(m[1]); const niv=m[3]?(m[3][0]==="B"?"Básico":"Medio"):(n>4?"Básico":"Medio"); return `${n}° ${niv} ${m[4]}`; }
+  return "";
+}
+function parseSheet(rows, sn){
+  const hi=rows.slice(0,25).findIndex(row=>row.some(c=>/^\s*(rut|run)\b/i.test(String(c))));
+  if(hi<0) return {sn, skip:"sin columna RUT"};
+  // Curso: primero el texto sobre la tabla (p. ej. CURSO: PRIMER AÑO "A"), luego el nombre de la hoja
+  let top=""; for(const row of rows.slice(0,hi)){ for(const c of row){ const k=cursoFromText(c); if(k){ top=k; break; } } if(top) break; }
+  const curso = top || cursoFromText(sn);
+  if(!curso) return {sn, skip:"no indica curso"};
+  const norm=v=>String(v??"").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ");
+  const H=rows[hi].map(norm), Hp=(rows[hi-1]||[]).map(norm);
+  const find=re=>{ let i=H.findIndex(h=>re.test(h)); if(i<0) i=Hp.findIndex(h=>re.test(h)); return i; };
+  const cR=find(/^(rut|run)\b/), cDV=find(/^(dv|digito|dig\.? ?verif)/), cN=find(/^nombre|^alumno|^estudiante|paterno.*nombres/), cAP=find(/^(apellido )?paterno$|^apellidos?$|^apellido 1/), cAM=find(/^(apellido )?materno$|^apellido 2/), cRet=find(/^retiro$|^ret\.?$|^fecha retiro|^f\.? ?retiro/);
+  const ok=[], bad=[]; let retirados=0;
+  for(const row of rows.slice(hi+1)){
+    const rawRut=String(row[cR]??"").trim(); if(!rawRut) continue;
+    if(cRet>=0 && String(row[cRet]??"").trim()){ retirados++; continue; }
+    let rr=rawRut; if(cDV>=0 && String(row[cDV]).trim()) rr=cleanRut(rr)+String(row[cDV]).trim(); const rut=normRut(rr);
+    let nombre = cN>=0 ? String(row[cN]) : ""; if(cAP>=0 && cAP!==cN) nombre+=" "+row[cAP]; if(cAM>=0 && cAM!==cN && cAM!==cAP) nombre+=" "+row[cAM]; nombre=titleName(nombre);
+    if(rut && nombre) ok.push({rut,nombre,curso}); else if(nombre && /\d{6}/.test(rawRut)) bad.push(`${sn}: ${nombre} · ${rawRut}`);
+  }
+  return {sn, curso, ok, bad, retirados};
+}
+function parseRows(wb, fname){
+  const all=wb.SheetNames.map(sn=>parseSheet(XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:"",raw:false}), sn));
+  const sheets=all.filter(s=>!s.skip && s.ok.length+s.bad.length+s.retirados>0), skipped=all.filter(s=>s.skip);
+  if(!sheets.length){ $("#impPreview").innerHTML=`<div class="banner">No encontré hojas con una columna RUT/RUN y un curso indicado (por ejemplo, CURSO: PRIMER AÑO "A").</div>`; return; }
+  const seen=new Map(); for(const s of sheets) for(const r of s.ok) seen.set(r.rut,r); // si un RUT se repite, queda el de la última hoja
+  const ok=[...seen.values()], bad=sheets.flatMap(s=>s.bad), ret=sheets.reduce((a,s)=>a+s.retirados,0);
+  const cursos=new Set(ok.map(r=>r.curso));
+  IMP={ok};
+  const sheetTbl=`<div class="tbl scroll" style="max-height:260px"><table><thead><tr><th>Hoja</th><th>Curso</th><th class="num">Alumnos</th><th class="num">Retirados</th></tr></thead><tbody>${sheets.map(s=>`<tr><td>${esc(s.sn)}</td><td>${esc(s.curso)}</td><td class="num">${s.ok.length}</td><td class="num">${s.retirados||""}</td></tr>`).join("")}</tbody></table></div>`;
+  $("#impPreview").innerHTML=`<div style="display:grid;gap:10px"><div><b>${esc(fname)}</b> <span class="muted">· ${sheets.length} ${sheets.length===1?"hoja":"hojas"} de curso${skipped.length?` · omitidas: ${esc(skipped.map(s=>s.sn.trim()).join(", "))}`:""}</span></div>${sheetTbl}
+    <div class="row"><span class="pill o">${ok.length} alumnos</span><span class="pill o">${cursos.size} cursos</span>${ret?`<span class="pill w">${ret} con fecha de retiro (no se cargan)</span>`:""}${bad.length?`<span class="pill b" title="${esc(bad.slice(0,8).join("\n"))}">${bad.length} con RUT inválido</span>`:""}</div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="impReplace"> Reemplazar toda la base actual (elimina alumnos que no estén en este archivo)</label>
+    <div class="row"><button class="btn primary" id="impGo" ${ok.length?"":"disabled"}>Importar ${ok.length} alumnos</button><button class="btn" id="impCancel">Cancelar</button></div><div id="impProg" class="muted"></div></div>`;
+  $("#impCancel").onclick=()=>{ IMP=null; $("#impPreview").innerHTML=""; };
+  $("#impGo").onclick=runImport; }
+async function runImport(){ if(!IMP||!S.db) return; const def=""; const replace=$("#impReplace").checked; const btn=$("#impGo"); btn.disabled=true; const prog=$("#impProg");
+  const groups=new Map(); for(const r of IMP.ok){ const c=r.curso||def||"SIN CURSO"; const sl=slug(c); if(!groups.has(sl)) groups.set(sl,{nombre:c,alumnos:{}}); groups.get(sl).alumnos[r.rut]={nombre:r.nombre}; }
+  try{
+    let i=0; const total=groups.size;
+    if(replace){ for(const [sl,g] of groups){ prog.textContent=`Guardando curso ${++i} de ${total}…`; await saveCursoDoc(sl,g.nombre,g.alumnos); } for(const sl of [...S.cursos.keys()]) if(!groups.has(sl)){ prog.textContent="Eliminando cursos que no están en el archivo…"; await writeRetry(()=>S.db.doc("cursos/"+sl).delete()); } }
+    else {
+      const moved=new Map(); for(const [sl,g] of groups) for(const rut of Object.keys(g.alumnos)){ const p=S.alumnos.get(rut); if(p && p.slug!==sl){ if(!moved.has(p.slug)) moved.set(p.slug,[]); moved.get(p.slug).push(rut); } }
+      for(const [sl,g] of groups){ prog.textContent=`Guardando curso ${++i} de ${total}…`; const cur=S.cursos.get(sl); const base={...(cur?.alumnos||{})}; (moved.get(sl)||[]).forEach(r=>delete base[r]); moved.delete(sl); await saveCursoDoc(sl,g.nombre,{...base,...g.alumnos}); }
+      for(const [sl,ruts] of moved){ prog.textContent="Actualizando alumnos que cambiaron de curso…"; await removeFromCurso(sl,ruts); }
+    }
+    $("#impPreview").innerHTML=`<div class="pill o" style="font-size:14px;padding:6px 12px">Importación lista: ${IMP.ok.length} alumnos en ${groups.size} cursos</div>`; IMP=null;
+  } catch(err){ prog.textContent=dbErr(err); btn.disabled=false; } }
+
+/* ---------- horario y autorizaciones especiales ----------
+   autorizaciones/{rut} {rut,nombre,curso,hora,dias:[1..5],desde,hasta,motivo,creado} */
+const DIAS=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+function esDiaHabil(d){ const w=d.getDay(); return w>=1 && w<=5; }
+function autorizacionVigente(rut, d){ const a=S.aut.get(rut); if(!a) return null; const k=dateKey(d); if(a.desde && k<a.desde) return null; if(a.hasta && k>a.hasta) return null; if(Array.isArray(a.dias) && a.dias.length && !a.dias.includes(d.getDay())) return null; return a; }
+function horaIngreso(rut, d){ const a=rut?autorizacionVigente(rut,d):null; return a?.hora || S.cfg.hora || "08:10"; }
+function minsLate(d, rut){ const [h,m]=horaIngreso(rut,d).split(":").map(Number); return Math.max(0, Math.floor((d.getHours()*60+d.getMinutes()) - (h*60+m))); }
+
+function renderAut(){ if($("#tab-autorizaciones").hidden) return; const hoy=new Date(); const list=[...S.aut.values()].sort((a,b)=>a.curso.localeCompare(b.curso,"es",{numeric:true})||a.nombre.localeCompare(b.nombre,"es"));
+  $("#autBody").innerHTML = list.length ? list.map(a=>{ const vig=!!autorizacionVigente(a.rut,hoy)||(a.desde&&dateKey(hoy)<a.desde); const venc=a.hasta && dateKey(hoy)>a.hasta;
+    return `<tr data-rut="${esc(a.rut)}"><td>${esc(a.nombre)}<div class="muted" style="font-size:12px">${esc(fmtRut(a.rut))}</div></td><td>${esc(a.curso)}</td><td class="num"><b>${esc(a.hora)}</b></td><td>${(a.dias||[]).map(x=>DIAS[x]).join(" ")}</td><td>${a.desde?esc(a.desde.split("-").reverse().join("-")):"—"} al ${a.hasta?esc(a.hasta.split("-").reverse().join("-")):"indefinido"}</td><td style="white-space:normal;min-width:160px">${esc(a.motivo||"")}</td><td>${venc?`<span class="pill b">Vencida</span>`:`<span class="pill o">Vigente</span>`}</td><td><button class="btn sm" data-aedit>Editar</button> <button class="btn sm danger" data-adel>Quitar</button></td></tr>`; }).join("")
+    : `<tr><td colspan="8" class="empty">No hay alumnos con horario especial. Agrega uno con el formulario.</td></tr>`; }
+function fillAutForm(a){ $("#autRut").value=a?fmtRut(a.rut):""; $("#autHora").value=a?.hora||"09:00"; document.querySelectorAll("#autDias input").forEach(c=>c.checked = a ? (a.dias||[]).includes(Number(c.value)) : true); $("#autDesde").value=a?.desde||dateKey(new Date()); $("#autHasta").value=a?.hasta||""; $("#autMotivo").value=a?.motivo||""; autLookup(); }
+function autLookup(){ const r=normRut($("#autRut").value); const al=r&&S.alumnos.get(r); $("#autWho").textContent = !$("#autRut").value.trim() ? "" : al ? `${al.nombre} · ${al.curso}` : r ? "RUT no está en la base de alumnos" : "RUT inválido"; }
+$("#autRut").addEventListener("input",autLookup);
+$("#autForm").addEventListener("submit", async e=>{ e.preventDefault(); const rut=normRut($("#autRut").value); const al=rut&&S.alumnos.get(rut); if(!al){ toast("Ingresa el RUT de un alumno que esté en la base"); return; }
+  const dias=[...document.querySelectorAll("#autDias input:checked")].map(c=>Number(c.value)); if(!dias.length){ toast("Marca al menos un día"); return; }
+  const doc={rut, nombre:al.nombre, curso:al.curso, hora:$("#autHora").value||"09:00", dias, desde:$("#autDesde").value||"", hasta:$("#autHasta").value||"", motivo:$("#autMotivo").value.trim(), creado:new Date().toISOString()};
+  try{ await writeRetry(()=>S.db.doc("autorizaciones/"+rut).set(doc)); toast("Horario especial guardado"); fillAutForm(null); }catch(err){ toast(dbErr(err)); } });
+$("#autBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-rut]"); if(!tr) return; const a=S.aut.get(tr.dataset.rut); if(!a) return;
+  if(e.target.closest("[data-aedit]")){ fillAutForm(a); $("#autRut").focus(); return; }
+  const b=e.target.closest("[data-adel]"); if(b){ if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar?"; return; } try{ await writeRetry(()=>S.db.doc("autorizaciones/"+a.rut).delete()); toast("Horario especial quitado"); }catch(err){ toast(dbErr(err)); } } });
+
+/* ---------- citaciones ----------
+   citaciones/{rut_periodo_tramo} {rut,nombre,curso,periodo,tramo,n,estado:"citado"|"asistio"|"no_asistio",fechaCit,horaCit,generada} */
+const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+function umbral(){ return Math.max(1, Number(S.cfg.umbral)||3); }
+function periodoKey(fecha){ const y=fecha.slice(0,4), m=Number(fecha.slice(5,7)), p=S.cfg.periodo||"mes"; if(p==="anio") return y; if(p==="semestre") return `${y}-S${m<=7?1:2}`; return fecha.slice(0,7); }
+function periodoLabel(k){ if(/^\d{4}$/.test(k)) return `el año escolar ${k}`; if(/-S\d$/.test(k)) return `el ${k.endsWith("1")?"primer":"segundo"} semestre ${k.slice(0,4)}`; return `${MESES[Number(k.slice(5,7))-1]} de ${k.slice(0,4)}`; }
+function fechaLarga(d){ return `${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`; }
+function alertas(){ const u=umbral(), g=new Map();
+  for(const e of allEntries()){ const pk=periodoKey(e.fecha), k=e.rut+"|"+pk; if(!g.has(k)) g.set(k,{rut:e.rut,periodo:pk,list:[]}); g.get(k).list.push(e); }
+  const out=[]; for(const a of g.values()){ a.list.sort((x,y)=>x.ts.localeCompare(y.ts)); const al=S.alumnos.get(a.rut)||a.list[a.list.length-1];
+    for(let t=1;t<=Math.floor(a.list.length/u);t++){ const id=`${a.rut}_${a.periodo}_${t}`; out.push({id, rut:a.rut, nombre:al.nombre, curso:al.curso, periodo:a.periodo, tramo:t, n:a.list.length, atrasos:a.list.slice(0,t*u), cit:S.cit.get(id)}); } }
+  return out.sort((a,b)=>(b.atrasos.at(-1).ts).localeCompare(a.atrasos.at(-1).ts)); }
+function estadoDe(a){ return a.cit?.estado || "pend"; }
+function renderAlerts(){ const al=alertas(); const pend=al.filter(a=>estadoDe(a)==="pend"); const b=$("#citBadge"); b.textContent=pend.length; b.hidden=!pend.length;
+  const bar=$("#alertBar"); bar.hidden=!pend.length; if(pend.length) $("#alertTxt").textContent = pend.length===1 ? `Alumno con ${umbral()} atrasos: citar apoderado (${pend[0].nombre}, ${pend[0].curso})` : `${pend.length} alumnos con ${umbral()} o más atrasos: citar apoderado`;
+  renderCitaciones(al); }
+$("#alertGo").addEventListener("click",()=>{ $("#citFiltro").value="pend"; showTab("citaciones"); });
+$("#citFiltro").addEventListener("input",()=>renderCitaciones());
+const EST={pend:["Pendiente de citar","b"],citado:["Citado","w"],asistio:["Asistió","o"],no_asistio:["No asistió","b"]};
+function nextHabil(){ const d=new Date(); do{ d.setDate(d.getDate()+1); }while(!esDiaHabil(d)); return dateKey(d); }
+function renderCitaciones(al){ if($("#tab-citaciones").hidden) return; al=al||alertas(); const f=$("#citFiltro").value;
+  const rows=al.filter(a=>{ const e=estadoDe(a); return f==="todas" || (f==="pend"&&e==="pend") || (f==="citado"&&e==="citado") || (f==="cerrado"&&(e==="asistio"||e==="no_asistio")); });
+  $("#citSub").textContent=`Se genera una alerta cuando un alumno llega a ${umbral()} atrasos en ${({mes:"el mes",semestre:"el semestre",anio:"el año"})[S.cfg.periodo||"mes"]}. Cada ${umbral()} atrasos más genera una nueva citación.`;
+  $("#citBody").innerHTML = rows.length ? rows.map(a=>{ const e=estadoDe(a), [lbl,cls]=EST[e]; const extra=a.cit?.fechaCit?`<div class="muted" style="font-size:12px">${esc(a.cit.fechaCit.split("-").reverse().join("-"))} ${esc(a.cit.horaCit||"")}</div>`:"";
+    const acts = e==="pend" ? `<button class="btn sm primary" data-gen>Generar carta PDF</button>` : `<button class="btn sm" data-gen>Carta PDF</button>${e==="citado"?` <button class="btn sm" data-st="asistio">Asistió</button> <button class="btn sm" data-st="no_asistio">No asistió</button>`:""}`;
+    return `<tr data-id="${esc(a.id)}"><td>${esc(a.nombre)}<div class="muted" style="font-size:12px">${esc(fmtRut(a.rut))}</div></td><td>${esc(a.curso)}</td><td>${esc(periodoLabel(a.periodo))}${a.tramo>1?` · ${a.tramo}ª citación`:""}</td><td class="num">${a.tramo*umbral()}${a.n>a.tramo*umbral()?` <span class="muted">(${a.n})</span>`:""}</td><td><span class="pill ${cls}">${lbl}</span>${extra}</td><td>${acts}</td></tr>`; }).join("")
+    : `<tr><td colspan="6" class="empty">${f==="pend"?"No hay alumnos pendientes de citación.":"No hay citaciones en esta vista."}</td></tr>`; }
+$("#citBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-id]"); if(!tr) return; const a=alertas().find(x=>x.id===tr.dataset.id); if(!a) return;
+  if(e.target.closest("[data-gen]")){ const nx=tr.nextElementSibling; if(nx?.classList.contains("citform")){ nx.remove(); return; }
+    const f=document.createElement("tr"); f.className="citform"; f.innerHTML=`<td colspan="6"><div class="row"><label class="f">Fecha de citación<input type="date" data-fc value="${esc(a.cit?.fechaCit||nextHabil())}"></label><label class="f">Hora<input type="time" data-hc value="${esc(a.cit?.horaCit||S.cfg.horaCit||"08:30")}"></label><button class="btn primary" data-pdf>Descargar carta PDF</button><span class="muted" style="font-size:13px">Firma: <b>${esc(firmante(a.curso).nombre)}</b>. Al descargar, la citación queda marcada como "Citado".</span></div></td>`; tr.after(f); return; }
+  const st=e.target.closest("[data-st]"); if(st){ try{ await writeRetry(()=>S.db.doc("citaciones/"+a.id).update({estado:st.dataset.st, cerrada:new Date().toISOString()})); toast("Estado actualizado"); }catch(err){ toast(dbErr(err)); } } });
+$("#citBody").addEventListener("click", async e=>{ const b=e.target.closest("[data-pdf]"); if(!b) return; const f=b.closest("tr.citform"), tr=f.previousElementSibling; const a=alertas().find(x=>x.id===tr.dataset.id); if(!a) return;
+  const fc=f.querySelector("[data-fc]").value, hc=f.querySelector("[data-hc]").value; if(!fc||!hc){ toast("Indica fecha y hora de la citación"); return; }
+  b.disabled=true;
+  try{ const blob=await cartaPDF(a, fc, hc); const ape=a.nombre.split(" ").slice(0,2).join("_").normalize("NFD").replace(/[̀-ͯ]/g,"");
+    if(!S.dl){ toast("Este visor no permite descargar archivos"); return; }
+    await S.dl.save({filename:`Citacion_${ape}_${slug(a.curso)}.pdf`, data:blob});
+    const doc={rut:a.rut,nombre:a.nombre,curso:a.curso,periodo:a.periodo,tramo:a.tramo,n:a.tramo*umbral(),estado:a.cit?.estado&&a.cit.estado!=="pend"?a.cit.estado:"citado",fechaCit:fc,horaCit:hc,generada:new Date().toISOString()};
+    await writeRetry(()=>S.db.doc("citaciones/"+a.id).set(doc)); toast("Carta generada");
+  }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo generar la carta"); } finally{ b.disabled=false; } });
+
+function firmante(curso){ const n=parseInt(String(curso),10); const alto=n>=3; return {nombre:(alto?S.cfg.firma34:S.cfg.firma12)||"Inspector(a) General", cargo:(alto?S.cfg.cargo34:S.cfg.cargo12)||"Inspector(a) General"}; }
+async function logoPng(){ if(!S.cfg.logo) return null; return new Promise(res=>{ const i=new Image(); i.onload=()=>{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); res({data:c.toDataURL("image/jpeg",0.92),w:c.width,h:c.height}); }; i.onerror=()=>res(null); i.src=S.cfg.logo; }); }
+async function cartaPDF(a, fc, hc){
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"letter"}); const W=215.9, M=22, TW=W-2*M; let y=16;
+  const lg=await logoPng(); let tx=M; if(lg){ const h=24, w=Math.min(32,h*lg.w/lg.h); doc.addImage(lg.data,"JPEG",M,y,w,h*(w/(h*lg.w/lg.h))); tx=M+w+6; }
+  doc.setTextColor(23,50,92); doc.setFont("helvetica","bold"); doc.setFontSize(12.5); doc.text(doc.splitTextToSize((S.cfg.nombre||DEF_NAME).toUpperCase(), W-M-tx), tx, y+9);
+  doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(90,106,128); doc.text("Inspectoría General", tx, y+19);
+  y=45; doc.setDrawColor(23,50,92); doc.setLineWidth(0.7); doc.line(M,y,W-M,y); doc.setTextColor(18,32,51);
+  y+=9; doc.setFontSize(10.5); doc.text(`${S.cfg.ciudad||"San Fernando"}, ${fechaLarga(new Date())}`, W-M, y, {align:"right"});
+  y+=12; doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.text("CITACIÓN DE APODERADO", W/2, y, {align:"center"});
+  y+=6; doc.setFont("helvetica","normal"); doc.setFontSize(10.5); doc.text("Motivo: atrasos reiterados", W/2, y, {align:"center"});
+  y+=12; doc.setFontSize(11); doc.text("Señor(a) Apoderado(a):", M, y); y+=5.5; doc.text("Presente", M, y); y+=9;
+  const para=t=>{ const ls=doc.splitTextToSize(t,TW); doc.text(ls,M,y,{lineHeightFactor:1.45}); y+=ls.length*5.6+3; };
+  para(`Junto con saludarle, Inspectoría General informa que el(la) estudiante ${a.nombre.toUpperCase()}, RUN ${fmtRut(a.rut)}, del curso ${a.curso}, registra ${a.atrasos.length} atrasos en ${periodoLabel(a.periodo)}, de acuerdo con el siguiente detalle:`);
+  const cols=[["N°",12],["Fecha",48],["Hora de llegada",38],["Hora de ingreso",38],["Minutos",25]]; const tw=cols.reduce((s,c)=>s+c[1],0); let x0=M+(TW-tw)/2;
+  doc.setFillColor(238,242,247); doc.rect(x0,y,tw,7,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(9.5); let xx=x0; cols.forEach(([t,w])=>{ doc.text(t,xx+2,y+4.8); xx+=w; }); y+=7; doc.setFont("helvetica","normal");
+  a.atrasos.forEach((e,i)=>{ const d=new Date(e.fecha+"T12:00:00"); const vals=[String(i+1), `${DIAS[d.getDay()]} ${e.fecha.split("-").reverse().join("-")}`, e.hora.slice(0,5), e.horaIngreso||S.cfg.hora||"08:10", String(e.min??"")]; xx=x0; vals.forEach((v,j)=>{ doc.text(v,xx+2,y+4.8); xx+=cols[j][1]; }); doc.setDrawColor(213,221,232); doc.setLineWidth(0.2); doc.line(x0,y+7,x0+tw,y+7); y+=7; if(y>250){ doc.addPage(); y=20; } });
+  y+=7; doc.setFontSize(11); const fd=new Date(fc+"T12:00:00"); const fcl=`${["domingo","lunes","martes","miércoles","jueves","viernes","sábado"][fd.getDay()]} ${fechaLarga(fd)}`;
+  para(`De acuerdo con el Reglamento Interno del establecimiento, se le cita a presentarse en Inspectoría General el día ${fcl}, a las ${hc} horas, para tomar conocimiento de esta situación y acordar medidas que favorezcan la puntualidad del estudiante.`);
+  para(`Se solicita asistir puntualmente y presentar esta citación. Si no puede asistir, comuníquese con Inspectoría General para acordar una nueva fecha.`);
+  y+=2; doc.text("Atentamente,", M, y);
+  if(y>205){ doc.addPage(); y=30; }
+  y+=24; doc.setDrawColor(18,32,51); doc.setLineWidth(0.3); doc.line(W/2-35,y,W/2+35,y); y+=5; doc.setFont("helvetica","bold"); const fm=firmante(a.curso); doc.text(fm.nombre, W/2, y, {align:"center"}); doc.setFont("helvetica","normal"); y+=5; doc.text(fm.cargo, W/2, y, {align:"center"}); y+=5; doc.setFontSize(9.5); doc.text(S.cfg.nombre||DEF_NAME, W/2, y, {align:"center"});
+  y=Math.max(y+12, 232); if(y>245){ doc.addPage(); y=20; }
+  doc.setLineDashPattern([1.5,1.5],0); doc.setDrawColor(120,130,145); doc.line(M,y,W-M,y); doc.setLineDashPattern([],0); doc.setFontSize(8); doc.setTextColor(90,106,128); doc.text("recortar y devolver firmado a Inspectoría General", W/2, y+3.5, {align:"center"});
+  doc.setTextColor(18,32,51); doc.setFontSize(10); y+=10; doc.setFont("helvetica","bold"); doc.text("COLILLA DE RECEPCIÓN DE CITACIÓN", M, y); doc.setFont("helvetica","normal"); y+=6;
+  doc.text(`Estudiante: ${a.nombre}  ·  Curso: ${a.curso}  ·  Citación: ${fd.getDate()}-${pad2(fd.getMonth()+1)}-${fd.getFullYear()} ${hc} h`, M, y); y+=9;
+  doc.text("Nombre apoderado(a): ______________________________________   Firma: ____________________", M, y); y+=8; doc.text("Fecha de recepción: ____ / ____ / ________", M, y);
+  return doc.output("blob"); }
+
+/* ---------- boucher de ingreso (impresora térmica de rollo) ---------- */
+async function logoGris(){ if(!S.cfg.logo) return null; return new Promise(res=>{ const i=new Image(); i.onload=()=>{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); const im=x.getImageData(0,0,c.width,c.height), d=im.data; for(let k=0;k<d.length;k+=4){ const g=0.3*d[k]+0.59*d[k+1]+0.11*d[k+2]; d[k]=d[k+1]=d[k+2]=g; } x.putImageData(im,0,0); res({data:c.toDataURL("image/jpeg",0.9),w:c.width,h:c.height}); }; i.onerror=()=>res(null); i.src=S.cfg.logo; }); }
+async function voucherPDF(v){
+  const {jsPDF}=window.jspdf; const W=Number(S.cfg.papel)===80?80:58, M=W===80?5:3.5, CW=W-2*M, big=W===80?1.15:1; const lg=await logoGris();
+  const draw=doc=>{ let y=4; const C=W/2;
+    const t=(txt,size,bold,gap)=>{ doc.setFont("helvetica",bold?"bold":"normal"); doc.setFontSize(size*big); const ls=doc.splitTextToSize(String(txt),CW); ls.forEach(l=>{ y+=size*big*0.36; doc.text(l,C,y,{align:"center"}); y+=size*big*0.08; }); y+=gap??1; };
+    const dash=()=>{ y+=1; doc.setLineDashPattern([0.8,0.8],0); doc.setLineWidth(0.25); doc.line(M,y,W-M,y); doc.setLineDashPattern([],0); y+=2; };
+    const row=(k,val,size,bold)=>{ doc.setFont("helvetica","normal"); doc.setFontSize(7*big); y+=2.6; doc.text(k.toUpperCase(),M,y); doc.setFont("helvetica",bold?"bold":"normal"); doc.setFontSize((size||9)*big); const ls=doc.splitTextToSize(String(val),CW); ls.forEach(l=>{ y+=(size||9)*big*0.38; doc.text(l,M,y); y+=0.6; }); y+=0.6; };
+    doc.setTextColor(0,0,0);
+    if(lg){ const h=W===80?18:15, w=Math.min(CW*0.5,h*lg.w/lg.h), hh=w*lg.h/lg.w; doc.addImage(lg.data,"JPEG",C-w/2,y,w,hh); y+=hh+1; }
+    t((S.cfg.nombre||DEF_NAME).toUpperCase(),7.5,true,0.4); t("Inspectoría General",7,false,0.5);
+    dash(); t("PASE DE INGRESO",13,true,0.3); t(v.tipo==="autorizado"?"Horario especial autorizado":"Ingreso con atraso",8,false,0.3); dash();
+    row("Alumno(a)",v.nombre,10,true); row("RUT",fmtRut(v.rut)); row("Curso",v.curso,10,true);
+    const d=new Date(v.fecha+"T12:00:00"); row("Fecha",`${["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][d.getDay()]} ${v.fecha.split("-").reverse().join("-")}`);
+    row("Hora de ingreso",v.hora.slice(0,5),18,true);
+    if(v.tipo==="autorizado") row("Horario autorizado",`${v.horaAut} hrs${v.motivo?` · ${v.motivo}`:""}`,8);
+    else row("Atraso",`${v.min} min (ingreso ${v.horaIngreso} hrs)${v.nPer?` · ${v.nPer}° del mes`:""}`,8);
+    dash(); t("AUTORIZADO POR INSPECTORÍA GENERAL",W===80?10:9,true,0.8); t("Presentar este pase al profesor(a) al ingresar a la sala.",6.5,false,4);
+    doc.setLineWidth(0.25); doc.line(C-CW*0.35,y,C+CW*0.35,y); y+=0.5; t("Timbre / firma Inspectoría",6.5,false,0.8);
+    t(`Folio ${v.folio}`,6,false,0); return y+5; };
+  const probe=new jsPDF({unit:"mm",format:[W,400]}); const H=Math.ceil(draw(probe));
+  const doc=new jsPDF({unit:"mm",format:[W,H],orientation:"portrait"}); draw(doc); return doc.output("blob"); }
+async function printVoucher(btn){ const v=S.voucher; if(!v) return; if(!S.dl){ toast("Este visor no permite descargar el boucher"); return; } if(btn) btn.disabled=true;
+  clearTimeout(S.resetT);
+  try{ const blob=await voucherPDF(v); await S.dl.save({filename:`boucher_${v.rut}_${v.fecha}_${v.hora.slice(0,5).replace(":","")}.pdf`, data:blob}); if(btn) btn.textContent="Boucher listo ✓"; }
+  catch(err){ if(err?.code!=="declined") toast("No se pudo generar el boucher"); if(btn) btn.disabled=false; }
+  finally{ S.resetT=setTimeout(resetKiosk, 8000); } }
+function setVoucher(al, en, extra){ const d=new Date(en.ts||Date.now()); S.voucher={nombre:al.nombre, rut:al.rut, curso:al.curso, fecha:en.fecha||dateKey(d), hora:en.hora, min:en.min, horaIngreso:en.horaIngreso||S.cfg.hora, folio:(en.id||d.getTime().toString(36)).slice(-6).toUpperCase(), ...extra}; }
+function voucherBtns(auto){ return `<div class="row" style="justify-content:center"><button class="btn primary" id="resPrint">Imprimir boucher</button><button class="btn" id="resOk">Siguiente alumno</button></div>`; }
+function wireVoucher(auto){ const b=$("#resPrint"); if(!b) return; b.addEventListener("click",()=>printVoucher(b)); if(auto && S.cfg.voucherAuto!==false) printVoucher(b); }
+
+/* ---------- config ---------- */
+$("#cfgLogo").addEventListener("change", e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return; const img=new Image(); const url=URL.createObjectURL(f);
+  img.onload=async()=>{ const max=320, k=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement("canvas"); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k); c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+    let data=c.toDataURL("image/png"); if(data.length>180000) data=c.toDataURL("image/webp",0.85); await saveCfg({logo:data}); };
+  img.onerror=()=>toast("No se pudo leer la imagen"); img.src=url; });
+$("#cfgLogoDel").addEventListener("click",()=>saveCfg({logo:""}));
+$("#cfgForm").addEventListener("submit",e=>{ e.preventDefault(); saveCfg({nombre:$("#cfgNombre").value.trim()||DEF_NAME, hora:$("#cfgHora").value||"08:10", umbral:Math.max(1,Number($("#cfgUmbral").value)||3), periodo:$("#cfgPeriodo").value, firma12:$("#cfgFirma12").value.trim(), cargo12:$("#cfgCargo12").value.trim(), firma34:$("#cfgFirma34").value.trim(), cargo34:$("#cfgCargo34").value.trim(), ciudad:$("#cfgCiudad").value.trim()||"San Fernando", horaCit:$("#cfgHoraCit").value||"08:30", papel:Number($("#cfgPapel").value)||58, voucherAuto:$("#cfgVAuto").checked}); renderAlerts(); document.activeElement?.blur(); });
+async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de datos"); return; } const next={...S.cfg,...patch}; try{ await writeRetry(()=>S.db.doc("config/escuela").set(next)); S.cfg=next; renderBrand(); toast("Configuración guardada"); }catch(err){ toast(dbErr(err)); } }
+
+/* ---------- subscriptions ---------- */
+let unsubAtr=null;
+function subscribeAtrasos(){ unsubAtr?.(); S.dias.clear(); unsubAtr=S.db.collection("atrasos").where("fecha",">=",`${S.year}-01-01`).onSnapshot(snap=>{ S.dias.clear(); snap.docs.forEach(d=>S.dias.set(d.id,d.data())); renderToday(); renderRegistro(); renderAlumnos(); renderAlerts(); }, e=>showBanner("Se perdió la conexión con los registros. Recarga la página.")); }
+function showBanner(t){ const b=$("#dbBanner"); b.textContent=t; b.hidden=false; }
+async function boot(){
+  try{ const t=localStorage.getItem("tab"); if(t && t!=="ingreso") showTab(t); }catch(e){}
+  rutInput.focus();
+  const db = await window.claude?.use?.("db"); S.dl = await window.claude?.use?.("downloads");
+  if(!db){ showBanner("No hay conexión con la base de datos. Inicia sesión en claude.ai para registrar atrasos."); renderRegistro(); return; }
+  S.db=db;
+  db.doc("config/escuela").onSnapshot(s=>{ if(s.exists){ S.cfg={...S.cfg,...s.data()}; renderBrand(); renderAlerts(); } });
+  db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
+  subscribeAtrasos();
+  db.collection("autorizaciones").onSnapshot(snap=>{ S.aut.clear(); snap.docs.forEach(d=>S.aut.set(d.id,d.data())); renderAut(); }, ()=>{});
+  db.collection("citaciones").onSnapshot(snap=>{ S.cit.clear(); snap.docs.forEach(d=>S.cit.set(d.id,d.data())); renderAlerts(); }, ()=>{});
+  try{ const u=await window.claude.use("user"); if(u && (await u.can("data.write"))===false) showBanner("Tu cuenta solo puede ver datos. Para registrar atrasos necesitas acceso de Colaborador."); }catch(e){}
+}
+boot();
+})();
+</script>
+
+</body>
+</html>
