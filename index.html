@@ -326,9 +326,8 @@ tr.citform td{background:var(--surface-2);white-space:normal}
 <datalist id="cursosList"></datalist>
 <div id="loginBox" hidden style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center">
   <form id="loginForm" style="background:#fff;color:#111;padding:24px;border-radius:12px;display:grid;gap:12px;min-width:min(320px,90vw)">
-    <strong>Iniciar sesión</strong>
-    <input id="loginEmail" type="email" placeholder="Correo" required autocomplete="username" style="padding:10px;font:inherit">
-    <input id="loginPass" type="password" placeholder="Contraseña" required autocomplete="current-password" style="padding:10px;font:inherit">
+    <strong>Ingresa tu PIN</strong>
+    <input id="loginPin" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="PIN de 4 dígitos" required autocomplete="off" style="padding:10px;font:inherit;text-align:center;letter-spacing:6px">
     <div id="loginErr" style="color:#b00020;font-size:14px"></div>
     <button class="btn" type="submit">Entrar</button>
   </form>
@@ -699,8 +698,14 @@ const FIREBASE_CONFIG = {
 // En Firestore update() reemplaza mapas completos, por eso update se traduce a set con merge.
 function wrapDoc(ref){ return { get:()=>ref.get(), set:d=>ref.set(d), update:d=>ref.set(d,{merge:true}), delete:()=>ref.delete(), onSnapshot:(a,b)=>ref.onSnapshot(a,b) }; }
 function wrapDb(fs){ return { doc:p=>wrapDoc(fs.doc(p)), collection:n=>fs.collection(n) }; }
-function askLogin(auth){ return new Promise(res=>{ const box=$("#loginBox"), f=$("#loginForm"); box.hidden=false; box.style.display="flex";
-  f.onsubmit=async e=>{ e.preventDefault(); try{ await auth.signInWithEmailAndPassword($("#loginEmail").value.trim(),$("#loginPass").value); box.style.display="none"; box.hidden=true; res(); }catch(err){ $("#loginErr").textContent="Correo o contraseña incorrectos."; } }; }); }
+// El funcionario solo escribe su PIN de 4 dígitos. Internamente es una cuenta de Firebase Authentication:
+// correo = pin<PIN>@atrasos.cl, contraseña = <PIN>00 (Firebase exige mínimo 6 caracteres).
+function askLogin(auth){ return new Promise(res=>{ const box=$("#loginBox"), f=$("#loginForm"), err=m=>$("#loginErr").textContent=m; let fails=0, lock=0;
+  box.hidden=false; box.style.display="flex"; $("#loginPin").value=""; $("#loginPin").focus();
+  f.onsubmit=async e=>{ e.preventDefault(); if(Date.now()<lock){ err("Demasiados intentos. Espera 30 segundos."); return; }
+    const pin=$("#loginPin").value; if(!/^\d{4}$/.test(pin)){ err("El PIN debe tener 4 dígitos."); return; }
+    try{ await auth.signInWithEmailAndPassword(`pin${pin}@atrasos.cl`, pin+"00"); box.style.display="none"; box.hidden=true; res(); }
+    catch(ex){ if(++fails>=5){ fails=0; lock=Date.now()+30000; } err(ex?.code==="auth/network-request-failed"?"Sin conexión. Intenta de nuevo.":"PIN incorrecto."); $("#loginPin").value=""; $("#loginPin").focus(); } }; }); }
 async function connectFirebase(){
   if(typeof firebase==="undefined"){ showBanner("No se pudo cargar Firebase. Revisa la conexión a internet."); return null; }
   if(FIREBASE_CONFIG.apiKey==="REEMPLAZAR"){ showBanner("Falta configurar Firebase: pega tu firebaseConfig en index.html."); return null; }
