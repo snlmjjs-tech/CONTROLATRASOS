@@ -686,8 +686,8 @@ function subscribeAtrasos(){ unsubAtr?.(); S.dias.clear(); unsubAtr=S.db.collect
 function showBanner(t){ const b=$("#dbBanner"); b.textContent=t; b.hidden=false; }
 
 /* ---------- sesión ---------- */
-// Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = UID, valor = nombre.
-async function showUser(){ const u=S.auth?.currentUser; if(!u) return; let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const n=sn.exists && sn.data()[u.uid]; if(n) nombre=n; }catch(e){} $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
+// Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = correo (o UID), valor = nombre.
+async function showUser(){ const u=S.auth?.currentUser; if(!u) return; let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
 $("#logoutBtn").addEventListener("click", async ()=>{ try{ await S.auth.signOut(); }catch(e){} location.reload(); });
 
 /* ---------- Firebase ----------
