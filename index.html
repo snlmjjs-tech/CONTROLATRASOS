@@ -368,8 +368,9 @@ function tick(){ const d=new Date(); $("#clock").innerHTML = `${pad2(d.getHours(
 setInterval(tick,1000); tick();
 
 /* ---------- branding ---------- */
-function crestHTML(){ return S.cfg.logo ? `<img src="${esc(S.cfg.logo)}" alt="Insignia del establecimiento">` : `<div class="ph">Insignia<br>del colegio</div>`; }
-function renderBrand(){ $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = S.cfg.logo?`<img src="${esc(S.cfg.logo)}" alt="" style="width:34px;height:34px;object-fit:contain">`:""; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; } tick(); }
+const LOGO_DEF="logo.png"; // insignia por defecto; si se sube otra en Configuración, esa tiene prioridad
+function crestHTML(){ return `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="Insignia del establecimiento">`; }
+function renderBrand(){ $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="" style="width:34px;height:34px;object-fit:contain">`; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; } tick(); }
 renderBrand();
 
 /* ---------- data model ----------
@@ -611,7 +612,7 @@ $("#citBody").addEventListener("click", async e=>{ const b=e.target.closest("[da
   }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo generar la carta"); } finally{ b.disabled=false; } });
 
 function firmante(curso){ const n=parseInt(String(curso),10); const alto=n>=3; return {nombre:(alto?S.cfg.firma34:S.cfg.firma12)||"Inspector(a) General", cargo:(alto?S.cfg.cargo34:S.cfg.cargo12)||"Inspector(a) General"}; }
-async function logoPng(){ if(!S.cfg.logo) return null; return new Promise(res=>{ const i=new Image(); i.onload=()=>{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); res({data:c.toDataURL("image/jpeg",0.92),w:c.width,h:c.height}); }; i.onerror=()=>res(null); i.src=S.cfg.logo; }); }
+async function logoPng(){ return new Promise(res=>{ const i=new Image(); i.onload=()=>{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); res({data:c.toDataURL("image/jpeg",0.92),w:c.width,h:c.height}); }; i.onerror=()=>res(null); i.src=S.cfg.logo||LOGO_DEF; }); }
 async function cartaPDF(a, fc, hc){
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"letter"}); const W=215.9, M=22, TW=W-2*M; let y=16;
   const lg=await logoPng(); let tx=M; if(lg){ const h=24, w=Math.min(32,h*lg.w/lg.h); doc.addImage(lg.data,"JPEG",M,y,w,h*(w/(h*lg.w/lg.h))); tx=M+w+6; }
@@ -641,7 +642,7 @@ async function cartaPDF(a, fc, hc){
   return doc.output("blob"); }
 
 /* ---------- boucher de ingreso (impresora térmica de rollo) ---------- */
-async function logoGris(){ if(!S.cfg.logo) return null; return new Promise(res=>{ const i=new Image(); i.onload=()=>{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); const im=x.getImageData(0,0,c.width,c.height), d=im.data; for(let k=0;k<d.length;k+=4){ const g=0.3*d[k]+0.59*d[k+1]+0.11*d[k+2]; d[k]=d[k+1]=d[k+2]=g; } x.putImageData(im,0,0); res({data:c.toDataURL("image/jpeg",0.9),w:c.width,h:c.height}); }; i.onerror=()=>res(null); i.src=S.cfg.logo; }); }
+async function logoGris(){ return new Promise(res=>{ const i=new Image(); i.onload=()=>{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); const im=x.getImageData(0,0,c.width,c.height), d=im.data; for(let k=0;k<d.length;k+=4){ const g=0.3*d[k]+0.59*d[k+1]+0.11*d[k+2]; d[k]=d[k+1]=d[k+2]=g; } x.putImageData(im,0,0); res({data:c.toDataURL("image/jpeg",0.9),w:c.width,h:c.height}); }; i.onerror=()=>res(null); i.src=S.cfg.logo||LOGO_DEF; }); }
 async function voucherPDF(v){
   const {jsPDF}=window.jspdf; const W=Number(S.cfg.papel)===80?80:58, M=W===80?5:3.5, CW=W-2*M, big=W===80?1.15:1; const lg=await logoGris();
   const draw=doc=>{ let y=4; const C=W/2;
