@@ -149,6 +149,7 @@ tr.citform td{background:var(--surface-2);white-space:normal}
       <button role="tab" data-tab="alumnos" aria-selected="false">Alumnos</button>
       <button role="tab" data-tab="config" aria-selected="false">Configuración</button>
     </nav>
+    <div id="userBox" style="display:none;align-items:center;gap:8px;font-size:13px"><span>👤 <b id="userName"></b></span><button class="btn" id="logoutBtn" type="button" style="padding:6px 12px;font-size:13px">Cerrar sesión</button></div>
   </header>
   <div id="dbBanner" class="banner" hidden></div>
   <div id="alertBar" class="alertbar" hidden><span id="alertTxt"></span><button class="btn sm" id="alertGo">Ver citaciones</button></div>
@@ -684,6 +685,11 @@ let unsubAtr=null;
 function subscribeAtrasos(){ unsubAtr?.(); S.dias.clear(); unsubAtr=S.db.collection("atrasos").where("fecha",">=",`${S.year}-01-01`).onSnapshot(snap=>{ S.dias.clear(); snap.docs.forEach(d=>S.dias.set(d.id,d.data())); renderToday(); renderRegistro(); renderAlumnos(); renderAlerts(); }, e=>showBanner("Se perdió la conexión con los registros. Recarga la página.")); }
 function showBanner(t){ const b=$("#dbBanner"); b.textContent=t; b.hidden=false; }
 
+/* ---------- sesión ---------- */
+// Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = UID, valor = nombre.
+async function showUser(){ const u=S.auth?.currentUser; if(!u) return; let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const n=sn.exists && sn.data()[u.uid]; if(n) nombre=n; }catch(e){} $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
+$("#logoutBtn").addEventListener("click", async ()=>{ try{ await S.auth.signOut(); }catch(e){} location.reload(); });
+
 /* ---------- Firebase ----------
    Pega aquí la configuración de tu app web (Firebase Console > Configuración del proyecto > Tus apps). */
 const FIREBASE_CONFIG = {
@@ -715,6 +721,7 @@ async function connectFirebase(){
     try{ await fs.enablePersistence({synchronizeTabs:true}); }catch(e){}
     const user = await new Promise(r=>{ const u=auth.onAuthStateChanged(x=>{ u(); r(x); }); });
     if(!user) await askLogin(auth);
+    S.auth=auth;
     return wrapDb(fs);
   }catch(e){ showBanner("No se pudo conectar con Firebase."); return null; }
 }
@@ -724,7 +731,7 @@ async function boot(){
   S.dl = { save: async ({filename,data}) => { const a=document.createElement("a"); a.href=URL.createObjectURL(data); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),10000); } };
   const db = await connectFirebase();
   if(!db){ renderRegistro(); return; }
-  S.db=db;
+  S.db=db; showUser();
   db.doc("config/escuela").onSnapshot(s=>{ if(s.exists){ S.cfg={...S.cfg,...s.data()}; renderBrand(); renderAlerts(); } });
   db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
   subscribeAtrasos();
