@@ -427,7 +427,7 @@ async function doRegister(al, isNew){
     showResult("ok", al, `Atraso registrado a las ${en.hora.slice(0,5)} · ${en.min} min${en.autorizado?` (horario autorizado ${en.autorizado})`:""}`, nPer, nAnio, isNew);
   } catch(err){ setHint(dbErr(err),true); showStage("entry"); } }
 
-function showInfo(al, line){ const r=$("#stResult"); r.innerHTML=`<div class="result ok"><div>Sin atraso</div><div class="who">${esc(al.nombre)}</div>${al.curso?`<div class="meta">${esc(al.curso)}</div>`:""}<div class="meta">${esc(line)}</div></div>${S.voucher?voucherBtns():`<button class="btn" id="resOk" style="justify-self:center">Siguiente alumno</button>`}`; r.style.display="grid"; r.style.gap="12px"; showStage("result"); $("#resOk").addEventListener("click",resetKiosk); $("#resOk").focus(); clearTimeout(S.resetT); S.resetT=setTimeout(resetKiosk,S.voucher?8000:5000); wireVoucher(true); }
+function showInfo(al, line){ const r=$("#stResult"); r.innerHTML=`<div class="result ok"><div>Sin atraso</div><div class="who">${esc(al.nombre)}</div>${al.curso?`<div class="meta">${esc(al.curso)}</div>`:""}<div class="meta">${esc(line)}</div></div>${S.voucher?voucherBtns():`<button class="btn" id="resOk" style="justify-self:center">Siguiente alumno</button>`}`; r.style.display="grid"; r.style.gap="12px"; showStage("result"); $("#resOk").addEventListener("click",resetKiosk); $("#resOk").focus(); clearTimeout(S.resetT); wireVoucher(true); }
 function showResult(kind, al, line, nMes, nAnio, isNew){
   const r=$("#stResult");
   const u=umbral(), per={mes:"del mes",semestre:"del semestre",anio:"del año"}[S.cfg.periodo||"mes"];
@@ -435,7 +435,7 @@ function showResult(kind, al, line, nMes, nAnio, isNew){
   r.innerHTML=`<div class="result ${kind}"><div>${kind==="ok"?"✓ Registrado":"Ya registrado"}</div><div class="who">${esc(al.nombre)}</div><div class="meta">${esc(al.curso)} · ${esc(fmtRut(al.rut))}</div><div class="meta">${esc(line)}</div>${cnt}${isNew?`<div class="muted" style="font-size:13px">Alumno agregado a la base.</div>`:""}</div>${S.voucher?voucherBtns():`<button class="btn" id="resOk" style="justify-self:center">Siguiente alumno</button>`}`;
   r.style.display="grid"; r.style.gap="12px";
   showStage("result"); $("#resOk").addEventListener("click",resetKiosk); $("#resOk").focus();
-  clearTimeout(S.resetT); S.resetT=setTimeout(resetKiosk, nMes>=umbral()?12000:7000); wireVoucher(kind==="ok"); }
+  clearTimeout(S.resetT); wireVoucher(kind==="ok"); }
 
 function renderToday(){ const d=S.dias.get(dateKey(new Date())); const n=Object.values(d?.entries||{}).filter(x=>!x.anulado).length; $("#todayCount").textContent=`Atrasos de hoy: ${n}`; }
 
@@ -665,9 +665,9 @@ async function voucherPDF(v){
   const doc=new jsPDF({unit:"mm",format:[W,H],orientation:"portrait"}); draw(doc); return doc.output("blob"); }
 async function printVoucher(btn){ const v=S.voucher; if(!v) return; if(!S.dl){ toast("Este visor no permite descargar el boucher"); return; } if(btn) btn.disabled=true;
   clearTimeout(S.resetT);
-  try{ const blob=await voucherPDF(v); await S.dl.save({filename:`boucher_${v.rut}_${v.fecha}_${v.hora.slice(0,5).replace(":","")}.pdf`, data:blob}); if(btn) btn.textContent="Boucher listo ✓"; }
+  try{ const blob=await voucherPDF(v); await S.dl.save({filename:`boucher_${v.rut}_${v.fecha}_${v.hora.slice(0,5).replace(":","")}.pdf`, data:blob}); if(btn) btn.textContent="Imprimir de nuevo ✓"; }
   catch(err){ if(err?.code!=="declined") toast("No se pudo generar el boucher"); if(btn) btn.disabled=false; }
-  finally{ S.resetT=setTimeout(resetKiosk, 8000); } }
+  finally{ if(btn) btn.disabled=false; } }
 function setVoucher(al, en, extra){ const d=new Date(en.ts||Date.now()); S.voucher={nombre:al.nombre, rut:al.rut, curso:al.curso, fecha:en.fecha||dateKey(d), hora:en.hora, min:en.min, horaIngreso:en.horaIngreso||S.cfg.hora, folio:(en.id||d.getTime().toString(36)).slice(-6).toUpperCase(), ...extra}; }
 function voucherBtns(auto){ return `<div class="row" style="justify-content:center"><button class="btn primary" id="resPrint">Imprimir boucher</button><button class="btn" id="resOk">Siguiente alumno</button></div>`; }
 function wireVoucher(auto){ const b=$("#resPrint"); if(!b) return; b.addEventListener("click",()=>printVoucher(b)); if(auto && S.cfg.voucherAuto!==false) printVoucher(b); }
