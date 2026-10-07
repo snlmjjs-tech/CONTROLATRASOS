@@ -322,6 +322,37 @@ tr.citform td{background:var(--surface-2);white-space:normal}
       </form>
       <p class="muted" style="font-size:13px;margin-top:14px">Los datos se guardan en línea y los ven todas las personas con acceso a esta página (inspectores, portería). El computador de ingreso debe tener la página abierta con una cuenta que tenga permiso de Colaborador o superior.</p>
     </div>
+    <div class="panel" id="gestPanel" style="max-width:640px;margin-top:14px">
+      <h2>Gestión de funcionarios</h2>
+      <form id="gestLock" class="newform" style="margin-top:10px">
+        <p class="muted" style="margin:0;font-size:13px">Protegido con el código de gestión. Evita cambios por accidente; no reemplaza la seguridad de Firebase.</p>
+        <label class="f">Código de gestión<input id="gestCode" type="password" inputmode="numeric" maxlength="12" autocomplete="off"></label>
+        <div id="gestErr" style="color:var(--bad);font-size:14px"></div>
+        <div><button class="btn primary" type="submit">Desbloquear</button></div>
+      </form>
+      <div id="gestBody" hidden style="display:grid;gap:12px;margin-top:10px">
+        <div class="tbl scroll" style="max-height:300px"><table><thead><tr><th>Nombre</th><th>Correo interno</th><th></th></tr></thead><tbody id="gestList"></tbody></table></div>
+        <p class="muted" style="margin:0;font-size:13px">Aquí se administran los nombres. Las cuentas de acceso (PIN) se crean y borran en Firebase → Authentication → Usuarios.</p>
+        <h3 style="margin:4px 0 0">Agregar funcionario</h3>
+        <form id="gestAdd" class="newform">
+          <div class="row">
+            <label class="f" style="flex:2 1 220px">Nombre<input id="gestNombre" autocomplete="off"></label>
+            <label class="f" style="flex:1 1 120px">PIN (4 dígitos)<input id="gestPin" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+          </div>
+          <div><button class="btn primary" type="submit">Agregar a la lista</button></div>
+        </form>
+        <div id="gestHow" class="stat" hidden></div>
+        <h3 style="margin:4px 0 0">Cambiar el código de gestión</h3>
+        <form id="gestCodeForm" class="newform">
+          <div class="row">
+            <label class="f" style="flex:1 1 140px">Código nuevo (4 a 8 dígitos)<input id="gestNew" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></label>
+            <label class="f" style="flex:1 1 140px">Repetir código<input id="gestNew2" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></label>
+          </div>
+          <div><button class="btn" type="submit">Cambiar código</button></div>
+        </form>
+        <div><button class="btn" type="button" id="gestRelockBtn">Bloquear panel</button></div>
+      </div>
+    </div>
   </section>
 </div>
 <datalist id="cursosList"></datalist>
@@ -356,7 +387,7 @@ function titleName(s){ return String(s??"").trim().replace(/\s+/g," ").toLowerCa
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-function showTab(t){ document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","citaciones","autorizaciones","alumnos","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
+function showTab(t){ document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","citaciones","autorizaciones","alumnos","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); if(t!=="config") gestRelock(); try{localStorage.setItem("tab",t)}catch(e){} }
 $("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.classList.contains("kiosk-mode"); document.body.classList.toggle("kiosk-mode",on); $("#kioskBtn").textContent = on ? "Salir de modo kiosco" : "Modo kiosco"; if(on){ try{ await document.documentElement.requestFullscreen?.(); }catch(e){} try{ await navigator.wakeLock?.request("screen"); }catch(e){} } else { try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch(e){} } $("#rutInput").focus(); });
 
 /* ---------- clock ---------- */
@@ -696,6 +727,39 @@ let unsubAtr=null;
 function subscribeAtrasos(){ unsubAtr?.(); S.dias.clear(); unsubAtr=S.db.collection("atrasos").where("fecha",">=",`${S.year}-01-01`).onSnapshot(snap=>{ S.dias.clear(); snap.docs.forEach(d=>S.dias.set(d.id,d.data())); renderToday(); renderRegistro(); renderAlumnos(); renderAlerts(); }, e=>showBanner("Se perdió la conexión con los registros. Recarga la página.")); }
 function showBanner(t){ const b=$("#dbBanner"); b.textContent=t; b.hidden=false; }
 
+/* ---------- panel de gestión de funcionarios ---------- */
+// Candado de interfaz: el hash vive en config/gestion (se puede cambiar desde el panel); si no existe se usa el de fábrica.
+const GEST_SALT="controlatrasos:gestion:", GEST_DEF_HASH="4e40c5c64c0198092f0ed11529f4ad658f6ddbc9e6f4e193c94a8b613bf0390a";
+let gestOk=false, gestFails=0, gestLockUntil=0;
+async function sha256(t){ const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+async function gestExpected(){ try{ const sn=await S.db.doc("config/gestion").get(); return (sn.exists && sn.data().hash) || GEST_DEF_HASH; }catch(e){ return null; } }
+function gestShow(ok){ gestOk=ok; $("#gestLock").hidden=ok; $("#gestBody").hidden=!ok; if(ok) renderGest(); else { $("#gestCode").value=""; $("#gestErr").textContent=""; $("#gestHow").hidden=true; } }
+function gestRelock(){ if(gestOk) gestShow(false); }
+$("#gestLock").addEventListener("submit", async e=>{ e.preventDefault(); const err=$("#gestErr");
+  if(!S.db){ err.textContent="Sin conexión a la base de datos."; return; }
+  if(Date.now()<gestLockUntil){ err.textContent="Demasiados intentos. Espera 30 segundos."; return; }
+  const exp=await gestExpected(); if(!exp){ err.textContent="No se pudo verificar el código. Revisa la conexión."; return; }
+  if((await sha256(GEST_SALT+$("#gestCode").value.trim()))===exp){ gestFails=0; gestShow(true); }
+  else { if(++gestFails>=5){ gestFails=0; gestLockUntil=Date.now()+30000; } err.textContent="Código incorrecto."; $("#gestCode").value=""; } });
+$("#gestRelockBtn").addEventListener("click",()=>gestShow(false));
+function renderGest(){ if(!gestOk) return; const rows=Object.entries(S.func||{}).sort((a,b)=>String(a[1]).localeCompare(String(b[1]),"es"));
+  $("#gestList").innerHTML = rows.length ? rows.map(([em,n])=>`<tr><td>${esc(n)}</td><td>${esc(em)}</td><td style="white-space:nowrap"><button class="btn sm" data-gren="${esc(em)}">Editar nombre</button> <button class="btn sm danger" data-gdel="${esc(em)}">Quitar de la lista</button></td></tr>`).join("") : `<tr><td colspan="3" class="empty">Aún no hay funcionarios en la lista.</td></tr>`; }
+$("#gestList").addEventListener("click", async e=>{ const r=e.target.closest("[data-gren]"), d=e.target.closest("[data-gdel]"); if(!r&&!d) return;
+  try{
+    if(r){ const em=r.dataset.gren, n=prompt("Nombre del funcionario:",(S.func||{})[em]||""); if(n===null) return; const nom=titleName(n); if(!nom) return; await S.db.doc("config/funcionarios").update({[em]:nom}); toast("Nombre actualizado"); }
+    else { if(!d.dataset.confirm){ d.dataset.confirm="1"; d.textContent="¿Confirmar?"; setTimeout(()=>{ if(d.isConnected){ delete d.dataset.confirm; d.textContent="Quitar de la lista"; } },3000); return; }
+      await S.db.doc("config/funcionarios").update({[d.dataset.gdel]:firebase.firestore.FieldValue.delete()}); toast("Quitado de la lista. La cuenta de acceso sigue en Firebase: bórrala allí si corresponde."); }
+  }catch(err){ toast(dbErr(err)); } });
+$("#gestAdd").addEventListener("submit", async e=>{ e.preventDefault(); const nom=titleName($("#gestNombre").value), pin=$("#gestPin").value.trim();
+  if(!nom||!/^\d{4}$/.test(pin)){ toast("Escribe el nombre y un PIN de 4 dígitos"); return; }
+  const em=`pin${pin}@atrasos.cl`; if((S.func||{})[em]){ toast("Ese PIN ya está en uso por "+S.func[em]); return; }
+  try{ await S.db.doc("config/funcionarios").update({[em]:nom}); } catch(err){ toast(dbErr(err)); return; }
+  const how=$("#gestHow"); how.innerHTML=`<b>${esc(nom)}</b> quedó en la lista. Falta crear su acceso en Firebase (Authentication → Usuarios → Agregar usuario):<br>Correo: <b>${esc(em)}</b><br>Contraseña: <b>${esc(pin)}00</b><br><span class="muted">Hasta que crees esa cuenta, ese PIN no podrá entrar.</span>`; how.hidden=false; $("#gestAdd").reset(); });
+$("#gestCodeForm").addEventListener("submit", async e=>{ e.preventDefault(); const a=$("#gestNew").value.trim(), b=$("#gestNew2").value.trim();
+  if(!/^\d{4,8}$/.test(a)){ toast("El código debe tener entre 4 y 8 dígitos"); return; } if(a!==b){ toast("Los códigos no coinciden"); return; }
+  try{ await S.db.doc("config/gestion").set({hash:await sha256(GEST_SALT+a), actualizado:new Date().toISOString(), por:$("#userName").textContent||""}); $("#gestCodeForm").reset(); toast("Código de gestión cambiado"); }
+  catch(err){ toast(dbErr(err)); } });
+
 /* ---------- sesión ---------- */
 // Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = correo (o UID), valor = nombre.
 async function showUser(){ const u=S.auth?.currentUser; if(!u) return; let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
@@ -742,7 +806,7 @@ async function boot(){
   S.dl = { save: async ({filename,data}) => { const a=document.createElement("a"); a.href=URL.createObjectURL(data); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),10000); } };
   const db = await connectFirebase();
   if(!db){ renderRegistro(); return; }
-  S.db=db; showUser();
+  S.db=db; showUser(); db.doc("config/funcionarios").onSnapshot(sn=>{ S.func=sn.exists?sn.data():{}; renderGest(); }, ()=>{});
   db.doc("config/escuela").onSnapshot(s=>{ if(s.exists){ S.cfg={...S.cfg,...s.data()}; renderBrand(); renderAlerts(); } });
   db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
   subscribeAtrasos();
