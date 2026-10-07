@@ -310,12 +310,8 @@ tr.citform td{background:var(--surface-2);white-space:normal}
         </div>
         <h3 style="margin-top:8px">Boucher de ingreso</h3>
         <div class="row" style="align-items:center">
-          <label class="f" style="flex:1 1 160px">Papel del boucher<select id="cfgPapel"><option value="58">Rollo 58 mm</option><option value="80">Rollo 80 mm</option><option value="etq">Etiqueta vertical (tamaño fijo)</option></select></label>
+          <label class="f" style="flex:1 1 160px">Ancho del rollo<select id="cfgPapel"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
           <label style="flex:2 1 220px;display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="cfgVAuto"> Generar el boucher automáticamente al registrar</label>
-        </div>
-        <div class="row" id="cfgEtqRow" hidden>
-          <label class="f" style="flex:1 1 140px">Ancho de la etiqueta (mm)<input id="cfgEtqW" type="number" min="25" max="120" step="1"></label>
-          <label class="f" style="flex:1 1 140px">Alto de la etiqueta (mm)<input id="cfgEtqH" type="number" min="25" max="250" step="1"></label>
         </div>
         <div class="row" style="align-items:center">
           <div class="crest" id="cfgCrest" style="width:96px;color:var(--navy)"></div>
@@ -374,7 +370,7 @@ setInterval(tick,1000); tick();
 /* ---------- branding ---------- */
 const LOGO_DEF="logo.png"; // insignia por defecto; si se sube otra en Configuración, esa tiene prioridad
 function crestHTML(){ return `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="Insignia del establecimiento">`; }
-function renderBrand(){ $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="" style="width:34px;height:34px;object-fit:contain">`; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgEtqW").value=S.cfg.etqW||50; $("#cfgEtqH").value=S.cfg.etqH||100; $("#cfgEtqRow").hidden=$("#cfgPapel").value!=="etq"; $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; } tick(); }
+function renderBrand(){ $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="" style="width:34px;height:34px;object-fit:contain">`; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; } tick(); }
 renderBrand();
 
 /* ---------- data model ----------
@@ -651,13 +647,13 @@ async function cartaPDF(a, fc, hc){
 /* ---------- boucher de ingreso (impresora térmica de rollo) ---------- */
 async function logoGris(){ return new Promise(res=>{ const i=new Image(); i.onload=()=>{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); const im=x.getImageData(0,0,c.width,c.height), d=im.data; for(let k=0;k<d.length;k+=4){ const g=0.3*d[k]+0.59*d[k+1]+0.11*d[k+2]; d[k]=d[k+1]=d[k+2]=g; } x.putImageData(im,0,0); res({data:c.toDataURL("image/jpeg",0.9),w:c.width,h:c.height}); }; i.onerror=()=>res(null); i.src=S.cfg.logo||LOGO_DEF; }); }
 async function voucherPDF(v){
-  const {jsPDF}=window.jspdf; const etq=S.cfg.papel==="etq", W=etq?(Number(S.cfg.etqW)||50):(Number(S.cfg.papel)===80?80:58), HF=etq?(Number(S.cfg.etqH)||100):0, wide=W>=80, M=wide?5:3.5, CW=W-2*M, big0=wide?1.15:1; const lg=await logoGris();
-  const draw=(doc,k,noLogo)=>{ const big=big0*k; let y=4; const C=W/2;
+  const {jsPDF}=window.jspdf; const W=Number(S.cfg.papel)===80?80:58, M=W===80?5:3.5, CW=W-2*M, big=W===80?1.15:1; const lg=await logoGris();
+  const draw=doc=>{ let y=4; const C=W/2;
     const t=(txt,size,bold,gap)=>{ doc.setFont("helvetica",bold?"bold":"normal"); doc.setFontSize(size*big); const ls=doc.splitTextToSize(String(txt),CW); ls.forEach(l=>{ y+=size*big*0.36; doc.text(l,C,y,{align:"center"}); y+=size*big*0.08; }); y+=gap??1; };
     const dash=()=>{ y+=1; doc.setLineDashPattern([0.8,0.8],0); doc.setLineWidth(0.25); doc.line(M,y,W-M,y); doc.setLineDashPattern([],0); y+=2; };
     const row=(k,val,size,bold)=>{ doc.setFont("helvetica","normal"); doc.setFontSize(7*big); y+=2.6; doc.text(k.toUpperCase(),M,y); doc.setFont("helvetica",bold?"bold":"normal"); doc.setFontSize((size||9)*big); const ls=doc.splitTextToSize(String(val),CW); ls.forEach(l=>{ y+=(size||9)*big*0.38; doc.text(l,M,y); y+=0.6; }); y+=0.6; };
     doc.setTextColor(0,0,0);
-    if(lg && !noLogo){ const h=(wide?18:15)*k, w=Math.min(CW*0.5,h*lg.w/lg.h), hh=w*lg.h/lg.w; doc.addImage(lg.data,"JPEG",C-w/2,y,w,hh); y+=hh+1; }
+    if(lg){ const h=W===80?18:15, w=Math.min(CW*0.5,h*lg.w/lg.h), hh=w*lg.h/lg.w; doc.addImage(lg.data,"JPEG",C-w/2,y,w,hh); y+=hh+1; }
     t((S.cfg.nombre||DEF_NAME).toUpperCase(),7.5,true,0.4); t("Inspectoría General",7,false,0.5);
     dash(); t("PASE DE INGRESO",13,true,0.3); t(v.tipo==="autorizado"?"Horario especial autorizado":"Ingreso con atraso",8,false,0.3); dash();
     row("Alumno(a)",v.nombre,10,true); row("RUT",fmtRut(v.rut)); row("Curso",v.curso,10,true);
@@ -666,38 +662,11 @@ async function voucherPDF(v){
     if(v.tipo==="autorizado") row("Horario autorizado",`${v.horaAut} hrs${v.motivo?` · ${v.motivo}`:""}`,8);
     else row("Atraso",`${v.min} min (ingreso ${v.horaIngreso} hrs)${v.nPer?` · ${v.nPer}° del mes`:""}`,8);
     if(v.tipo!=="autorizado" && v.justificado) row("Justificación","Justificado por apoderado",8,true);
-    dash(); t("AUTORIZADO POR INSPECTORÍA GENERAL",wide?10:9,true,0.8); t("Presentar este pase al profesor(a) al ingresar a la sala.",6.5,false,4);
+    dash(); t("AUTORIZADO POR INSPECTORÍA GENERAL",W===80?10:9,true,0.8); t("Presentar este pase al profesor(a) al ingresar a la sala.",6.5,false,4);
     doc.setLineWidth(0.25); doc.line(C-CW*0.35,y,C+CW*0.35,y); y+=0.5; t("Timbre / firma Inspectoría",6.5,false,0.8);
     t(`Folio ${v.folio}`,6,false,0); return y+5; };
-  // Etiqueta vertical (tamaño fijo): diseño compacto; si no cabe, se reduce la letra y, en último caso, se quita el escudo.
-  const drawEtq=(doc,k,noLogo)=>{ const m=3, cw=W-2*m, C=W/2; let y=2.5; doc.setTextColor(0,0,0);
-    const fs=(size,bold)=>{ doc.setFont("helvetica",bold?"bold":"normal"); doc.setFontSize(size*k); };
-    const t=(txt,size,bold,gap)=>{ fs(size,bold); doc.splitTextToSize(String(txt),cw).forEach(l=>{ y+=size*k*0.36; doc.text(l,C,y,{align:"center"}); y+=size*k*0.1; }); y+=(gap??0.6); };
-    const dash=()=>{ y+=0.5; doc.setLineDashPattern([0.8,0.8],0); doc.setLineWidth(0.2); doc.line(m,y,W-m,y); doc.setLineDashPattern([],0); y+=1.5; };
-    const field=(x,w,lab,val,size,bold)=>{ let yy=y; fs(5.5,false); yy+=5.5*k*0.36; doc.text(lab.toUpperCase(),x,yy); fs(size,bold); doc.splitTextToSize(String(val),w).forEach(l=>{ yy+=size*k*0.38; doc.text(l,x,yy); yy+=0.4; }); return yy+0.6; };
-    const one=(lab,val,size,bold)=>{ y=field(m,cw,lab,val,size,bold); };
-    const two=(l1,v1,s1,b1,l2,v2,s2,b2)=>{ const w=cw/2-1, y1=field(m,w,l1,v1,s1,b1), y2=field(m+cw/2+1,w,l2,v2,s2,b2); y=Math.max(y1,y2); };
-    if(lg && !noLogo){ const h=9*k, w=Math.min(cw*0.5,h*lg.w/lg.h), hh=w*lg.h/lg.w; doc.addImage(lg.data,"JPEG",C-w/2,y,w,hh); y+=hh+0.8; }
-    t((S.cfg.nombre||DEF_NAME).toUpperCase(),6.5,true,0.2); t("Inspectoría General",5.5,false,0.3);
-    dash(); t("PASE DE INGRESO",11,true,0.2); t(v.tipo==="autorizado"?"Horario especial autorizado":"Ingreso con atraso",6.5,false,0.2); dash();
-    one("Alumno(a)",v.nombre,9,true);
-    two("RUT",fmtRut(v.rut),8,false,"Curso",v.curso,8,true);
-    const d=new Date(v.fecha+"T12:00:00"), dias=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-    two("Fecha",`${dias[d.getDay()]} ${v.fecha.split("-").reverse().join("-")}`,7.5,false,"Hora de ingreso",v.hora.slice(0,5),15,true);
-    if(v.tipo==="autorizado") one("Horario autorizado",`${v.horaAut} hrs${v.motivo?` · ${v.motivo}`:""}`,7,false);
-    else one("Atraso",`${v.min} min (ingreso ${v.horaIngreso} hrs)${v.nPer?` · ${v.nPer}° del mes`:""}`,7,false);
-    if(v.tipo!=="autorizado" && v.justificado) one("Justificación","Justificado por apoderado",7,true);
-    dash(); t("AUTORIZADO POR INSPECTORÍA GENERAL",7,true,0.4); t("Presentar este pase al profesor(a) al ingresar a la sala.",5.5,false,2.5);
-    doc.setLineWidth(0.2); doc.line(C-cw*0.35,y,C+cw*0.35,y); y+=0.3; t("Timbre / firma Inspectoría",5.5,false,0.2); t(`Folio ${v.folio}`,5,false,0);
-    return y+3; };
-  const dr=etq?drawEtq:draw;
-  let k=1, noLogo=false, H;
-  if(etq){ H=HF; const fits=(kk,nl)=>dr(new jsPDF({unit:"mm",format:[W,Math.max(H*3,400)]}),kk,nl)<=H; let ok=false;
-    for(k=1;k>=0.7-1e-9;k-=0.05){ if(fits(k,false)){ ok=true; break; } }
-    if(!ok){ noLogo=true; for(k=1;k>=0.5-1e-9;k-=0.05){ if(fits(k,true)){ ok=true; break; } } }
-    if(!ok) k=0.5; }
-  else { const probe=new jsPDF({unit:"mm",format:[W,400]}); H=Math.ceil(draw(probe,1)); }
-  const doc=new jsPDF({unit:"mm",format:[W,H],orientation:"portrait"}); dr(doc,k,noLogo); return doc.output("blob"); }
+  const probe=new jsPDF({unit:"mm",format:[W,400]}); const H=Math.ceil(draw(probe));
+  const doc=new jsPDF({unit:"mm",format:[W,H],orientation:"portrait"}); draw(doc); return doc.output("blob"); }
 async function printVoucher(btn, vv){ const v=vv||S.voucher; if(!v) return false; if(!S.dl){ toast("Este visor no permite descargar el boucher"); return false; } if(btn) btn.disabled=true;
   clearTimeout(S.resetT);
   try{ const blob=await voucherPDF(v); await S.dl.save({filename:`boucher_${v.rut}_${v.fecha}_${v.hora.slice(0,5).replace(":","")}.pdf`, data:blob}); if(btn) btn.textContent="Imprimir de nuevo ✓"; return true; }
@@ -719,8 +688,7 @@ $("#cfgLogo").addEventListener("change", e=>{ const f=e.target.files[0]; e.targe
     let data=c.toDataURL("image/png"); if(data.length>180000) data=c.toDataURL("image/webp",0.85); await saveCfg({logo:data}); };
   img.onerror=()=>toast("No se pudo leer la imagen"); img.src=url; });
 $("#cfgLogoDel").addEventListener("click",()=>saveCfg({logo:""}));
-$("#cfgPapel").addEventListener("change",()=>{ $("#cfgEtqRow").hidden=$("#cfgPapel").value!=="etq"; });
-$("#cfgForm").addEventListener("submit",e=>{ e.preventDefault(); saveCfg({nombre:$("#cfgNombre").value.trim()||DEF_NAME, hora:$("#cfgHora").value||"08:10", umbral:Math.max(1,Number($("#cfgUmbral").value)||3), periodo:$("#cfgPeriodo").value, firma12:$("#cfgFirma12").value.trim(), cargo12:$("#cfgCargo12").value.trim(), firma34:$("#cfgFirma34").value.trim(), cargo34:$("#cfgCargo34").value.trim(), ciudad:$("#cfgCiudad").value.trim()||"San Fernando", horaCit:$("#cfgHoraCit").value||"08:30", papel:$("#cfgPapel").value==="etq"?"etq":(Number($("#cfgPapel").value)||58), etqW:Math.min(120,Math.max(25,Number($("#cfgEtqW").value)||50)), etqH:Math.min(250,Math.max(25,Number($("#cfgEtqH").value)||100)), voucherAuto:$("#cfgVAuto").checked}); renderAlerts(); document.activeElement?.blur(); });
+$("#cfgForm").addEventListener("submit",e=>{ e.preventDefault(); saveCfg({nombre:$("#cfgNombre").value.trim()||DEF_NAME, hora:$("#cfgHora").value||"08:10", umbral:Math.max(1,Number($("#cfgUmbral").value)||3), periodo:$("#cfgPeriodo").value, firma12:$("#cfgFirma12").value.trim(), cargo12:$("#cfgCargo12").value.trim(), firma34:$("#cfgFirma34").value.trim(), cargo34:$("#cfgCargo34").value.trim(), ciudad:$("#cfgCiudad").value.trim()||"San Fernando", horaCit:$("#cfgHoraCit").value||"08:30", papel:Number($("#cfgPapel").value)||58, voucherAuto:$("#cfgVAuto").checked}); renderAlerts(); document.activeElement?.blur(); });
 async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de datos"); return; } const next={...S.cfg,...patch}; try{ await writeRetry(()=>S.db.doc("config/escuela").set(next)); S.cfg=next; renderBrand(); toast("Configuración guardada"); }catch(err){ toast(dbErr(err)); } }
 
 /* ---------- subscriptions ---------- */
