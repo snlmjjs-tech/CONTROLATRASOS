@@ -200,7 +200,7 @@ tr.citform td{background:var(--surface-2);white-space:normal}
     <div class="panel">
       <div class="row" style="justify-content:space-between">
         <div><h2>Registro de atrasos</h2><p class="muted" style="margin:0">Filtra por fechas, curso o alumno. Los atrasos anulados no se cuentan.</p></div>
-        <button class="btn" id="exportBtn">Exportar a Excel</button>
+        <div class="row" style="gap:8px"><button class="btn" id="pdfBtn">Informe en PDF</button><button class="btn" id="exportBtn">Exportar a Excel</button></div>
       </div>
       <div class="row" style="margin-top:14px">
         <label class="f">Desde<input type="date" id="fDesde"></label>
@@ -471,6 +471,46 @@ $("#regBody").addEventListener("click", async e=>{ const pb=e.target.closest("bu
   const b=e.target.closest("button[data-anular]"); if(!b) return;
   if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar?"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.confirm; b.textContent="Anular"; } },3000); return; }
   const [f,id]=b.dataset.anular.split("|"); b.disabled=true; try{ await writeRetry(()=>S.db.doc("atrasos/"+f).update({entries:{[id]:{anulado:true}}})); toast("Atraso anulado"); } catch(err){ toast(dbErr(err)); b.disabled=false; } });
+
+/* ---------- informe en PDF del Registro (respeta los filtros: fechas, curso, hora y búsqueda) ---------- */
+async function informePDF(rows, fl){
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"letter"}); const W=215.9, H=279.4, M=14, TW=W-2*M; let y=14;
+  const lg=await logoPng(); let tx=M; if(lg){ const h=18, w=Math.min(24,h*lg.w/lg.h); doc.addImage(lg.data,"JPEG",M,y,w,w*lg.h/lg.w); tx=M+w+5; }
+  doc.setTextColor(23,50,92); doc.setFont("helvetica","bold"); doc.setFontSize(12); doc.text(doc.splitTextToSize((S.cfg.nombre||DEF_NAME).toUpperCase(),W-M-tx),tx,y+7);
+  doc.setFont("helvetica","normal"); doc.setFontSize(9.5); doc.setTextColor(90,106,128); doc.text("Inspectoría General",tx,y+14);
+  y=36; doc.setDrawColor(23,50,92); doc.setLineWidth(0.6); doc.line(M,y,W-M,y);
+  y+=9; doc.setTextColor(18,32,51); doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.text("INFORME DE ATRASOS",M,y);
+  const dmy=f=>f?f.split("-").reverse().join("-"):"";
+  const filtros=[["Período",`${dmy(fl.desde)||"inicio"} al ${dmy(fl.hasta)||"hoy"}`],["Franja horaria",(fl.horaDe||fl.horaA)?`${fl.horaDe||"00:00"} a ${fl.horaA||"23:59"} hrs`:"Todo el día"],["Curso",fl.curso||"Todos"]];
+  if(fl.texto) filtros.push(["Búsqueda",fl.texto]);
+  doc.setFontSize(9.5); y+=3; filtros.forEach(([k,v])=>{ y+=5; doc.setFont("helvetica","bold"); doc.text(k+":",M,y); doc.setFont("helvetica","normal"); doc.text(String(v),M+32,y); });
+  const rc=rows.filter(r=>!r.justificado), nj=rows.length-rc.length, est=new Set(rows.map(r=>r.rut)).size, avg=rc.length?Math.round(rc.reduce((s,r)=>s+(r.min||0),0)/rc.length):0;
+  y+=8; const stats=[["Atrasos sin justificar",rc.length],["Justificados",nj],["Estudiantes",est],["Promedio minutos",avg]], bw=TW/4;
+  stats.forEach(([l,v],i)=>{ const x=M+i*bw; doc.setFillColor(238,242,247); doc.rect(x,y,bw-2,15,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.setTextColor(23,50,92); doc.text(String(v),x+4,y+8); doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(90,106,128); doc.text(l.toUpperCase(),x+4,y+12.5); });
+  y+=22; doc.setTextColor(18,32,51);
+  const table=(titulo, cols, data, mutedFn)=>{ const tw=cols.reduce((s,c)=>s+c[1],0);
+    const head=()=>{ doc.setFillColor(238,242,247); doc.rect(M,y,tw,7,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.setTextColor(18,32,51); let xx=M; cols.forEach(([t,w])=>{ doc.text(t,xx+1.5,y+4.8); xx+=w; }); y+=7; };
+    if(y>H-40){ doc.addPage(); y=16; }
+    doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(23,50,92); doc.text(titulo,M,y); y+=4; head();
+    data.forEach(vals=>{ if(y>H-18){ doc.addPage(); y=16; head(); }
+      doc.setFont("helvetica","normal"); doc.setFontSize(8.5); const mu=mutedFn&&mutedFn(vals); doc.setTextColor(mu?130:18,mu?140:32,mu?150:51);
+      let xx=M; vals.forEach((v,j)=>{ let t=String(v??""); while(t.length>1 && doc.getTextWidth(t)>cols[j][1]-3) t=t.slice(0,-2)+"…"; doc.text(t,xx+1.5,y+4.2); xx+=cols[j][1]; });
+      doc.setDrawColor(225,231,240); doc.setLineWidth(0.15); doc.line(M,y+5.5,M+tw,y+5.5); y+=5.5; });
+    y+=7; doc.setTextColor(18,32,51); };
+  table(`Detalle de atrasos (${rows.length})`,[["Fecha",29],["Hora",14],["Min.",11],["RUT",27],["Alumno",58],["Curso",27],["Justif.",21]],
+    rows.map(r=>[`${DIAS[new Date(r.fecha+"T12:00:00").getDay()]} ${dmy(r.fecha)}`, String(r.hora).slice(0,5), r.min??"", fmtRut(r.rut), r.nombre, r.curso, r.justificado?"Sí":"No"]), v=>v[6]==="Sí");
+  const byR=new Map(); rows.forEach(r=>{ const o=byR.get(r.rut)||{nombre:r.nombre,curso:r.curso,n:0,j:0}; if(r.justificado) o.j++; else o.n++; byR.set(r.rut,o); });
+  table(`Resumen por estudiante (${byR.size})`,[["Alumno",90],["Curso",34],["Sin justificar",32],["Justificados",32]],
+    [...byR.values()].sort((a,b)=>b.n-a.n||b.j-a.j||a.nombre.localeCompare(b.nombre,"es")).map(o=>[o.nombre,o.curso,o.n,o.j]));
+  const n=doc.getNumberOfPages(), ahora=new Date(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(120,130,145);
+    doc.text(`Generado el ${fechaLarga(ahora)}, ${pad2(ahora.getHours())}:${pad2(ahora.getMinutes())}${fl.por?` · ${fl.por}`:""}`,M,H-8); doc.text(`Página ${i} de ${n}`,W-M,H-8,{align:"right"}); }
+  return doc.output("blob"); }
+$("#pdfBtn").addEventListener("click", async ()=>{ const rows=filtered(); if(!rows.length){ toast("No hay registros para el informe"); return; } if(!S.dl){ toast("Este visor no permite descargar archivos"); return; }
+  const fl={desde:$("#fDesde").value, hasta:$("#fHasta").value, curso:$("#fCurso").value, horaDe:$("#fHoraDe").value, horaA:$("#fHoraA").value, texto:$("#fTexto").value.trim(), por:$("#userName").textContent||""};
+  const b=$("#pdfBtn"); b.disabled=true;
+  try{ const blob=await informePDF(rows.slice().sort((x,y)=>x.ts.localeCompare(y.ts)), fl);
+    await S.dl.save({filename:`Informe_atrasos_${fl.desde}_a_${fl.hasta}${(fl.horaDe||fl.horaA)?`_${(fl.horaDe||"0000").replace(":","")}-${(fl.horaA||"2359").replace(":","")}`:""}.pdf`, data:blob}); toast("Informe generado"); }
+  catch(err){ if(err?.code!=="declined") toast("No se pudo generar el informe"); } finally{ b.disabled=false; } });
 
 $("#exportBtn").addEventListener("click", async ()=>{ const rows=filtered(); if(!rows.length){ toast("No hay registros para exportar"); return; }
   const cnt=new Map(), jus=new Map(); rows.forEach(r=>{ cnt.set(r.rut,(cnt.get(r.rut)||0)+(r.justificado?0:1)); jus.set(r.rut,(jus.get(r.rut)||0)+(r.justificado?1:0)); });
