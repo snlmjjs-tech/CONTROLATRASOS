@@ -136,6 +136,30 @@ tr.citform td{background:var(--surface-2);white-space:normal}
 .citform input{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
 @media (max-width:860px){.kiosk,.grid2{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* resumen general */
+.rs-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:6px}
+.rs-card{background:var(--surface-2);border-radius:10px;padding:14px;min-width:0}
+.rs-card h3{margin:0 0 10px;font-size:15px}
+.rs-card.wide{grid-column:1/-1}
+.bh{display:grid;grid-template-columns:minmax(70px,max-content) 1fr auto;gap:5px 10px;align-items:center;font-size:13px}
+.bh .lb{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+.bh .tr{height:14px;display:flex;align-items:center}
+.bh .br{display:block;height:14px;background:var(--navy);border-radius:0 4px 4px 0;min-width:2px}
+.bh .br.hi,.bv .br.hi{background:var(--accent)}
+.bh .vl{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:700}
+.bv{display:flex;align-items:flex-end;gap:3px;height:160px;border-bottom:1px solid var(--line);padding-top:18px}
+.bv .col{flex:1 1 0;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+.bv .br{display:block;width:100%;max-width:24px;background:var(--navy);border-radius:4px 4px 0 0;min-height:2px}
+.bv .vl{font-size:11px;font-weight:700;color:var(--ink);margin-bottom:2px}
+.bvl{display:flex;gap:3px;font-size:10px;color:var(--muted);margin-top:3px}
+.bvl span{flex:1 1 0;min-width:0;text-align:center;overflow:hidden;white-space:nowrap}
+.rs-card details{margin-top:10px;font-size:12px;color:var(--muted)}
+.rs-card summary{cursor:pointer}
+.rs-card table{width:100%;border-collapse:collapse;margin-top:6px}
+.rs-card td,.rs-card th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;color:var(--ink)}
+.rs-presets{display:flex;gap:6px;flex-wrap:wrap}
+@media (max-width:860px){.rs-grid{grid-template-columns:1fr}}
+body.rol-director .alertbar,body.rol-director #citBadge{display:none!important}
 </style>
 
 <div class="wrap">
@@ -144,6 +168,7 @@ tr.citform td{background:var(--surface-2);white-space:normal}
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="ingreso" aria-selected="true">Ingreso</button>
       <button role="tab" data-tab="registro" aria-selected="false">Registro</button>
+      <button role="tab" data-tab="resumen" aria-selected="false">Resumen</button>
       <button role="tab" data-tab="citaciones" aria-selected="false">Citaciones<span class="badge" id="citBadge" hidden>0</span></button>
       <button role="tab" data-tab="autorizaciones" aria-selected="false">Horarios especiales</button>
       <button role="tab" data-tab="alumnos" aria-selected="false">Alumnos</button>
@@ -222,6 +247,22 @@ tr.citform td{background:var(--surface-2);white-space:normal}
   </section>
 
   <!-- CITACIONES -->
+  <!-- RESUMEN GENERAL -->
+  <section id="tab-resumen" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;align-items:flex-end">
+        <div><h2>Resumen general</h2><p class="muted" style="margin:0">Atrasos del período elegido. No cuenta los atrasos justificados por el apoderado.</p></div>
+        <div class="rs-presets"><button class="btn sm" data-rs="hoy">Hoy</button><button class="btn sm" data-rs="semana">Esta semana</button><button class="btn sm" data-rs="mes">Este mes</button><button class="btn sm" data-rs="anio">Este año</button></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label class="f">Desde<input type="date" id="rDesde"></label>
+        <label class="f">Hasta<input type="date" id="rHasta"></label>
+      </div>
+      <div class="stats" id="rsKpis"></div>
+      <div class="rs-grid" id="rsCards"></div>
+    </div>
+  </section>
+
   <section id="tab-citaciones" hidden>
     <div class="panel">
       <div class="row" style="justify-content:space-between">
@@ -369,7 +410,7 @@ function titleName(s){ return String(s??"").trim().replace(/\s+/g," ").toLowerCa
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-function showTab(t){ document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","citaciones","autorizaciones","alumnos","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
+function showTab(t){ if(S.rol==="director") t="resumen"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
 $("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.classList.contains("kiosk-mode"); document.body.classList.toggle("kiosk-mode",on); $("#kioskBtn").textContent = on ? "Salir de modo kiosco" : "Modo kiosco"; if(on){ try{ await document.documentElement.requestFullscreen?.(); }catch(e){} try{ await navigator.wakeLock?.request("screen"); }catch(e){} } else { try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch(e){} } $("#rutInput").focus(); });
 
 /* ---------- clock ---------- */
@@ -785,12 +826,64 @@ async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de dato
 
 /* ---------- subscriptions ---------- */
 let unsubAtr=null;
-function subscribeAtrasos(){ unsubAtr?.(); S.dias.clear(); unsubAtr=S.db.collection("atrasos").where("fecha",">=",`${S.year}-01-01`).onSnapshot(snap=>{ S.dias.clear(); snap.docs.forEach(d=>S.dias.set(d.id,d.data())); renderToday(); renderRegistro(); renderAlumnos(); renderAlerts(); }, e=>showBanner("Se perdió la conexión con los registros. Recarga la página.")); }
+function subscribeAtrasos(){ unsubAtr?.(); S.dias.clear(); unsubAtr=S.db.collection("atrasos").where("fecha",">=",`${S.year}-01-01`).onSnapshot(snap=>{ S.dias.clear(); snap.docs.forEach(d=>S.dias.set(d.id,d.data())); renderToday(); renderRegistro(); renderAlumnos(); renderAlerts(); renderResumen(); }, e=>showBanner("Se perdió la conexión con los registros. Recarga la página.")); }
 function showBanner(t){ const b=$("#dbBanner"); b.textContent=t; b.hidden=false; }
+
+/* ---------- resumen general (para el director) ---------- */
+const RS_DIAS=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+function rsEnsureYear(){ const y=Number(($("#rDesde").value||"").slice(0,4)); if(y && y<S.year){ S.year=y; subscribeAtrasos(); } }
+function rsPreset(k){ const d=new Date(), hoy=dateKey(d); let desde=hoy;
+  if(k==="semana"){ const x=new Date(d); x.setDate(x.getDate()-((x.getDay()+6)%7)); desde=dateKey(x); }
+  else if(k==="mes") desde=dateKey(new Date(d.getFullYear(),d.getMonth(),1));
+  else if(k==="anio") desde=`${d.getFullYear()}-01-01`;
+  $("#rDesde").value=desde; $("#rHasta").value=hoy; rsEnsureYear(); renderResumen(); }
+const rsNada=()=>`<div class="muted" style="font-size:13px">Sin datos en el período.</div>`;
+function bh(items,hiMax){ if(!items.length) return rsNada(); const mx=Math.max(...items.map(i=>i.v),1), hi=hiMax?items.reduce((a,b)=>b.v>a.v?b:a,items[0]):null;
+  return `<div class="bh">${items.map(i=>`<span class="lb" title="${esc(i.l)}">${esc(i.l)}</span><span class="tr" title="${esc(i.l)}: ${i.v}"><span class="br${i===hi?" hi":""}" style="width:${Math.max(i.v/mx*100,1)}%"></span></span><span class="vl">${i.v}</span>`).join("")}</div>`; }
+function bv(items){ if(!items.length) return rsNada(); const mx=Math.max(...items.map(i=>i.v),1), hi=items.reduce((a,b)=>b.v>a.v?b:a,items[0]), step=Math.ceil(items.length/12);
+  return `<div class="bv">${items.map(i=>`<div class="col" title="${esc(i.l)}: ${i.v}">${i===hi?`<span class="vl">${i.v}</span>`:""}<span class="br${i===hi?" hi":""}" style="height:${Math.max(i.v/mx*88,1.5)}%"></span></div>`).join("")}</div><div class="bvl">${items.map((i,k)=>`<span>${k%step===0?esc(i.s||i.l):""}</span>`).join("")}</div>`; }
+function rsCard(titulo,body,items,col1,wide){ const tabla=items&&items.length?`<details><summary>Ver como tabla</summary><table><thead><tr><th>${esc(col1)}</th><th>Atrasos</th></tr></thead><tbody>${items.map(i=>`<tr><td>${esc(i.l)}</td><td>${i.v}</td></tr>`).join("")}</tbody></table></details>`:""; return `<div class="rs-card${wide?" wide":""}"><h3>${titulo}</h3>${body}${tabla}</div>`; }
+function rsSerie(rows,a,b){ if(!rows.length) return {items:[],titulo:"Atrasos por día"};
+  const fechas=rows.map(e=>e.fecha).sort(), d0=a>"0000"?a:fechas[0], d1=b<"9999"?b:fechas[fechas.length-1], t0=new Date(d0+"T12:00:00"), t1=new Date(d1+"T12:00:00"), n=Math.round((t1-t0)/864e5)+1, m=new Map(), items=[];
+  if(n<=45){ rows.forEach(e=>m.set(e.fecha,(m.get(e.fecha)||0)+1)); for(let d=new Date(t0); d<=t1; d.setDate(d.getDate()+1)){ if(!esDiaHabil(d)) continue; const k=dateKey(d); items.push({l:`${RS_DIAS[d.getDay()]} ${k.split("-").reverse().join("-")}`, s:`${d.getDate()}/${d.getMonth()+1}`, v:m.get(k)||0}); } return {items,titulo:"Atrasos por día"}; }
+  rows.forEach(e=>{ const k=e.fecha.slice(0,7); m.set(k,(m.get(k)||0)+1); }); for(let d=new Date(t0.getFullYear(),t0.getMonth(),1); d<=t1; d.setMonth(d.getMonth()+1)){ const k=dateKey(d).slice(0,7); items.push({l:`${MESES[d.getMonth()]} ${d.getFullYear()}`, s:MESES[d.getMonth()].slice(0,3), v:m.get(k)||0}); }
+  return {items,titulo:"Atrasos por mes"}; }
+function renderResumen(){ if($("#tab-resumen").hidden) return; const a=$("#rDesde").value||"0000", b=$("#rHasta").value||"9999";
+  const all=allEntries().filter(e=>e.fecha>=a && e.fecha<=b), rows=all.filter(e=>!e.justificado), nj=all.length-rows.length;
+  const est=new Map(); rows.forEach(e=>{ const o=est.get(e.rut)||{nombre:e.nombre,curso:e.curso,n:0}; o.n++; est.set(e.rut,o); });
+  const avg=rows.length?Math.round(rows.reduce((s,e)=>s+(e.min||0),0)/rows.length):0, alerta=[...est.values()].filter(o=>o.n>=umbral()).length;
+  const pct=S.alumnos.size?Math.round(est.size/S.alumnos.size*100):null, hoy=dateKey(new Date()), hoyN=allEntries().filter(e=>e.fecha===hoy && !e.justificado).length;
+  const cits=alertas(), nCit=est=>cits.filter(x=>estadoDe(x)===est).length;
+  $("#rsKpis").innerHTML=[[rows.length,"Atrasos sin justificar"],[nj,"Justificados"],[est.size,`Estudiantes con atrasos${pct!=null?` (${pct}% del alumnado)`:""}`],[avg,"Promedio de minutos"],[alerta,`Con ${umbral()} o más atrasos`],[nCit("pend"),"Citaciones pendientes"],[hoyN,"Atrasos de hoy"]].map(([v,l])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+  const serie=rsSerie(rows,a,b);
+  const hh=new Map(); rows.forEach(e=>{ const h=Number(String(e.hora).slice(0,2)); hh.set(h,(hh.get(h)||0)+1); }); const hs=[...hh.keys()], horas=[]; if(hs.length) for(let h=Math.min(...hs); h<=Math.max(...hs); h++) horas.push({l:`${pad2(h)}:00 a ${pad2(h)}:59`, s:`${pad2(h)}h`, v:hh.get(h)||0});
+  const wd=new Map(); rows.forEach(e=>{ const d=new Date(e.fecha+"T12:00:00").getDay(); wd.set(d,(wd.get(d)||0)+1); }); const sem=[1,2,3,4,5,6,0].filter(d=>d>=1&&d<=5||wd.get(d)).map(d=>({l:["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][d], s:RS_DIAS[d], v:wd.get(d)||0}));
+  const nv=new Map(); rows.forEach(e=>{ const m=String(e.curso).match(/^(\d+)°\s*(\S+)/), k=m?`${m[1]}° ${m[2]}`:String(e.curso); nv.set(k,(nv.get(k)||0)+1); }); const niveles=[...nv].sort((x,y)=>x[0].localeCompare(y[0],"es",{numeric:true})).map(([l,v])=>({l,v}));
+  const cc=new Map(); rows.forEach(e=>cc.set(e.curso,(cc.get(e.curso)||0)+1)); const cursos=[...cc].sort((x,y)=>y[1]-x[1]).slice(0,10).map(([l,v])=>({l,v}));
+  const top=[...est.values()].sort((x,y)=>y.n-x.n||x.nombre.localeCompare(y.nombre,"es")).slice(0,10);
+  const citItems=[{l:"Pendientes de citar",v:nCit("pend")},{l:"Citados",v:nCit("citado")},{l:"Asistieron",v:nCit("asistio")},{l:"No asistieron",v:nCit("no_asistio")}];
+  $("#rsCards").innerHTML=[
+    rsCard(serie.titulo,bv(serie.items),serie.items,serie.titulo.endsWith("día")?"Día":"Mes",true),
+    rsCard("Hora de llegada",bv(horas),horas,"Hora"),
+    rsCard("Día de la semana",bh(sem,true),sem,"Día"),
+    rsCard("Por nivel",bh(niveles,true),niveles,"Nivel"),
+    rsCard("Cursos con más atrasos (los 10 primeros)",bh(cursos,true),cursos,"Curso"),
+    `<div class="rs-card wide"><h3>Estudiantes con más atrasos (los 10 primeros)</h3>${top.length?`<ul class="rank">${top.map(o=>`<li><span>${esc(o.nombre)} <span class="muted">· ${esc(o.curso)}</span></span><span class="pill ${o.n>=5?"b":o.n>=3?"w":"o"}">${o.n}</span></li>`).join("")}</ul>`:rsNada()}</div>`,
+    rsCard("Citaciones del año cargado",bh(citItems,false),citItems,"Estado")
+  ].join(""); }
+document.querySelectorAll("[data-rs]").forEach(b=>b.addEventListener("click",()=>rsPreset(b.dataset.rs)));
+["#rDesde","#rHasta"].forEach(x=>$(x).addEventListener("input",()=>{ rsEnsureYear(); renderResumen(); }));
+(function(){ const d=new Date(); $("#rDesde").value=`${d.getFullYear()}-01-01`; $("#rHasta").value=dateKey(d); })();
+
+/* ---------- acceso de director: ve solo el Resumen ----------
+   Las cuentas se listan en Firestore: config/directores { "pin<PIN>@atrasos.cl": "Nombre" }.
+   Es una vista limitada de la pantalla; los permisos de la base de datos son los mismos que los de cualquier funcionario. */
+function applyRol(){ const em=S.auth?.currentUser?.email, dir=!!(em && S.dir && S.dir[em]!==undefined); S.rol=dir?"director":""; document.body.classList.toggle("rol-director",dir);
+  document.querySelectorAll("nav.tabs button").forEach(b=>{ b.hidden = dir && b.dataset.tab!=="resumen"; }); if(dir) showTab("resumen"); showUser(); }
 
 /* ---------- sesión ---------- */
 // Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = correo (o UID), valor = nombre.
-async function showUser(){ const u=S.auth?.currentUser; if(!u) return; let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
+async function showUser(){ const u=S.auth?.currentUser; if(!u) return; let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
 $("#logoutBtn").addEventListener("click", async ()=>{ try{ await S.auth.signOut(); }catch(e){} location.reload(); });
 
 /* ---------- Firebase ----------
@@ -834,12 +927,12 @@ async function boot(){
   S.dl = { save: async ({filename,data}) => { const a=document.createElement("a"); a.href=URL.createObjectURL(data); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),10000); } };
   const db = await connectFirebase();
   if(!db){ renderRegistro(); return; }
-  S.db=db; showUser();
+  S.db=db; showUser(); db.doc("config/directores").onSnapshot(sn=>{ S.dir=sn.exists?sn.data():{}; applyRol(); }, ()=>{});
   db.doc("config/escuela").onSnapshot(s=>{ if(s.exists){ S.cfg={...S.cfg,...s.data()}; renderBrand(); renderAlerts(); } });
-  db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
+  db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); renderResumen(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
   subscribeAtrasos();
   db.collection("autorizaciones").onSnapshot(snap=>{ S.aut.clear(); snap.docs.forEach(d=>S.aut.set(d.id,d.data())); renderAut(); }, ()=>{});
-  db.collection("citaciones").onSnapshot(snap=>{ S.cit.clear(); snap.docs.forEach(d=>S.cit.set(d.id,d.data())); renderAlerts(); }, ()=>{});
+  db.collection("citaciones").onSnapshot(snap=>{ S.cit.clear(); snap.docs.forEach(d=>S.cit.set(d.id,d.data())); renderAlerts(); renderResumen(); }, ()=>{});
 }
 boot();
 })();
