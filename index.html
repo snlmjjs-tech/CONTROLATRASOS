@@ -160,6 +160,9 @@ tr.citform td{background:var(--surface-2);white-space:normal}
 .rs-presets{display:flex;gap:6px;flex-wrap:wrap}
 @media (max-width:860px){.rs-grid{grid-template-columns:1fr}}
 body.rol-director .alertbar,body.rol-director #citBadge{display:none!important}
+/* citaciones: no asistió se mantiene en rojo / historial */
+tr.cit-no td{background:var(--bad-soft)}
+tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
 </style>
 
 <div class="wrap">
@@ -172,6 +175,7 @@ body.rol-director .alertbar,body.rol-director #citBadge{display:none!important}
       <button role="tab" data-tab="citaciones" aria-selected="false">Citaciones<span class="badge" id="citBadge" hidden>0</span></button>
       <button role="tab" data-tab="autorizaciones" aria-selected="false">Horarios especiales</button>
       <button role="tab" data-tab="alumnos" aria-selected="false">Alumnos</button>
+      <button role="tab" data-tab="historial" aria-selected="false">Historial de cambios</button>
       <button role="tab" data-tab="config" aria-selected="false">Configuración</button>
     </nav>
     <div id="userBox" style="display:none;align-items:center;gap:8px;font-size:13px"><span>👤 <b id="userName"></b></span><button class="btn" id="logoutBtn" type="button" style="padding:6px 12px;font-size:13px">Cerrar sesión</button></div>
@@ -329,6 +333,19 @@ body.rol-director .alertbar,body.rol-director #citBadge{display:none!important}
   </section>
 
   <!-- CONFIG -->
+  <!-- HISTORIAL DE CAMBIOS -->
+  <section id="tab-historial" hidden>
+    <div class="panel">
+      <h2>Historial de cambios</h2>
+      <p class="muted" style="margin:0 0 10px">Lo que se ha hecho en la página (los últimos 500 movimientos). Si algo se hizo por error, usa <b>Deshacer</b>: el cambio vuelve atrás y queda anotado aquí.</p>
+      <div class="row">
+        <label class="f">Tipo<select id="hCat"><option value="">Todos</option><option>Citaciones</option><option>Atrasos</option><option>Alumnos</option><option>Horarios</option><option>Configuración</option></select></label>
+        <label class="f" style="flex:1 1 220px">Buscar<input id="hTexto" placeholder="Alumno, RUT, funcionario o detalle"></label>
+      </div>
+      <div class="tbl scroll" style="max-height:62vh;margin-top:10px"><table><thead><tr><th>Fecha y hora</th><th>Funcionario</th><th>Tipo</th><th>Detalle</th><th></th></tr></thead><tbody id="hBody"></tbody></table></div>
+    </div>
+  </section>
+
   <section id="tab-config" hidden>
     <div class="panel" style="max-width:640px">
       <h2>Configuración</h2>
@@ -410,7 +427,7 @@ function titleName(s){ return String(s??"").trim().replace(/\s+/g," ").toLowerCa
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-function showTab(t){ if(S.rol==="director") t="resumen"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
+function showTab(t){ if(S.rol==="director") t="resumen"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="historial") renderHist(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
 $("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.classList.contains("kiosk-mode"); document.body.classList.toggle("kiosk-mode",on); $("#kioskBtn").textContent = on ? "Salir de modo kiosco" : "Modo kiosco"; if(on){ try{ await document.documentElement.requestFullscreen?.(); }catch(e){} try{ await navigator.wakeLock?.request("screen"); }catch(e){} } else { try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch(e){} } $("#rutInput").focus(); });
 
 /* ---------- clock ---------- */
@@ -531,7 +548,7 @@ $("#regBody").addEventListener("click", async e=>{ const pb=e.target.closest("bu
     pb.disabled=true; const ok=await printVoucher(null, mkVoucher({rut:en.rut,nombre:en.nombre,curso:en.curso},{...en,id,fecha:f},{tipo:"atraso",nPer:(S.cfg.periodo==="mes"&&!en.justificado)?nPer:null})); pb.disabled=false; if(ok) toast("Boucher generado"); return; }
   const b=e.target.closest("button[data-anular]"); if(!b) return;
   if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar?"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.confirm; b.textContent="Anular"; } },3000); return; }
-  const [f,id]=b.dataset.anular.split("|"); b.disabled=true; try{ await writeRetry(()=>S.db.doc("atrasos/"+f).update({entries:{[id]:{anulado:true}}})); toast("Atraso anulado"); } catch(err){ toast(dbErr(err)); b.disabled=false; } });
+  const [f,id]=b.dataset.anular.split("|"); b.disabled=true; try{ const en=S.dias.get(f)?.entries?.[id]||{}; await writeRetry(()=>S.db.doc("atrasos/"+f).update({entries:{[id]:{anulado:true}}})); logHist({cat:"Atrasos",tipo:"atraso_anulado",rut:en.rut,nombre:en.nombre,curso:en.curso,ref:{fecha:f,id},desc:`Atraso anulado: ${f.split("-").reverse().join("-")} ${String(en.hora||"").slice(0,5)}`}); toast("Atraso anulado"); } catch(err){ toast(dbErr(err)); b.disabled=false; } });
 
 /* ---------- informe en PDF del Registro (respeta los filtros: fechas, curso, hora y búsqueda) ---------- */
 async function informePDF(rows, fl){
@@ -593,9 +610,9 @@ function renderAlumnos(){ if($("#tab-alumnos").hidden) return; const t=$("#aText
 $("#alBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-rut]"); if(!tr) return; const a=S.alumnos.get(tr.dataset.rut); if(!a) return;
   if(e.target.closest("[data-edit]")){ tr.innerHTML=`<td>${esc(fmtRut(a.rut))}</td><td><input id="edN" value="${esc(a.nombre)}" style="width:100%;padding:4px 6px"></td><td><input id="edC" list="cursosList" value="${esc(a.curso)}" style="width:120px;padding:4px 6px"></td><td></td><td><button class="btn sm primary" data-save>Guardar</button> <button class="btn sm" data-cancel>Cancelar</button></td>`; return; }
   if(e.target.closest("[data-cancel]")){ renderAlumnos(); return; }
-  if(e.target.closest("[data-save]")){ const n=titleName(tr.querySelector("#edN").value), c=normCurso(tr.querySelector("#edC").value); if(!n||!c) return; try{ await upsertAlumno(a.rut,n,c); toast("Alumno actualizado"); }catch(err){ toast(dbErr(err)); } return; }
-  const d=e.target.closest("[data-del]"); if(d){ if(!d.dataset.confirm){ d.dataset.confirm="1"; d.textContent="¿Confirmar?"; return; } try{ await removeFromCurso(a.slug,[a.rut]); toast("Alumno eliminado"); }catch(err){ toast(dbErr(err)); } } });
-$("#addForm").addEventListener("submit", async e=>{ e.preventDefault(); const rut=normRut($("#addRut").value); if(!rut){ toast("RUT inválido"); return; } try{ await upsertAlumno(rut,titleName($("#addNombre").value),$("#addCurso").value); e.target.reset(); toast("Alumno guardado"); }catch(err){ toast(dbErr(err)); } });
+  if(e.target.closest("[data-save]")){ const n=titleName(tr.querySelector("#edN").value), c=normCurso(tr.querySelector("#edC").value); if(!n||!c) return; try{ const antes={nombre:a.nombre,curso:a.curso}; await upsertAlumno(a.rut,n,c); if(antes.nombre!==n||antes.curso!==c) logHist({cat:"Alumnos",tipo:"alumno_editado",rut:a.rut,nombre:n,curso:c,ref:{rut:a.rut},antes,desc:`Alumno editado: ${antes.nombre} (${antes.curso}) → ${n} (${c})`}); toast("Alumno actualizado"); }catch(err){ toast(dbErr(err)); } return; }
+  const d=e.target.closest("[data-del]"); if(d){ if(!d.dataset.confirm){ d.dataset.confirm="1"; d.textContent="¿Confirmar?"; return; } try{ await removeFromCurso(a.slug,[a.rut]); logHist({cat:"Alumnos",tipo:"alumno_eliminado",rut:a.rut,nombre:a.nombre,curso:a.curso,ref:{rut:a.rut},antes:{nombre:a.nombre,curso:a.curso},desc:`Alumno eliminado de la base: ${a.nombre} (${a.curso})`}); toast("Alumno eliminado"); }catch(err){ toast(dbErr(err)); } } });
+$("#addForm").addEventListener("submit", async e=>{ e.preventDefault(); const rut=normRut($("#addRut").value); if(!rut){ toast("RUT inválido"); return; } try{ const nom=titleName($("#addNombre").value), cur=normCurso($("#addCurso").value); await upsertAlumno(rut,nom,$("#addCurso").value); logHist({cat:"Alumnos",tipo:"alumno_agregado",rut,nombre:nom,curso:cur,desc:`Alumno agregado o actualizado: ${nom} (${cur})`}); e.target.reset(); toast("Alumno guardado"); }catch(err){ toast(dbErr(err)); } });
 
 /* ---------- Excel import ---------- */
 const drop=$("#drop");
@@ -662,7 +679,7 @@ async function runImport(){ if(!IMP||!S.db) return; const def=""; const replace=
       for(const [sl,g] of groups){ prog.textContent=`Guardando curso ${++i} de ${total}…`; const cur=S.cursos.get(sl); const base={...(cur?.alumnos||{})}; (moved.get(sl)||[]).forEach(r=>delete base[r]); moved.delete(sl); await saveCursoDoc(sl,g.nombre,{...base,...g.alumnos}); }
       for(const [sl,ruts] of moved){ prog.textContent="Actualizando alumnos que cambiaron de curso…"; await removeFromCurso(sl,ruts); }
     }
-    $("#impPreview").innerHTML=`<div class="pill o" style="font-size:14px;padding:6px 12px">Importación lista: ${IMP.ok.length} alumnos en ${groups.size} cursos</div>`; IMP=null;
+    $("#impPreview").innerHTML=`<div class="pill o" style="font-size:14px;padding:6px 12px">Importación lista: ${IMP.ok.length} alumnos en ${groups.size} cursos</div>`; logHist({cat:"Alumnos",tipo:"importacion",desc:`Nómina importada desde Excel: ${IMP.ok.length} alumnos en ${groups.size} cursos${replace?" (reemplazando la base)":""}`}); IMP=null;
   } catch(err){ prog.textContent=dbErr(err); btn.disabled=false; } }
 
 /* ---------- horario y autorizaciones especiales ----------
@@ -683,10 +700,10 @@ $("#autRut").addEventListener("input",autLookup);
 $("#autForm").addEventListener("submit", async e=>{ e.preventDefault(); const rut=normRut($("#autRut").value); const al=rut&&S.alumnos.get(rut); if(!al){ toast("Ingresa el RUT de un alumno que esté en la base"); return; }
   const dias=[...document.querySelectorAll("#autDias input:checked")].map(c=>Number(c.value)); if(!dias.length){ toast("Marca al menos un día"); return; }
   const doc={rut, nombre:al.nombre, curso:al.curso, hora:$("#autHora").value||"09:00", dias, desde:$("#autDesde").value||"", hasta:$("#autHasta").value||"", motivo:$("#autMotivo").value.trim(), creado:new Date().toISOString()};
-  try{ await writeRetry(()=>S.db.doc("autorizaciones/"+rut).set(doc)); toast("Horario especial guardado"); fillAutForm(null); }catch(err){ toast(dbErr(err)); } });
+  try{ await writeRetry(()=>S.db.doc("autorizaciones/"+rut).set(doc)); logHist({cat:"Horarios",tipo:"horario_guardado",rut,nombre:al.nombre,curso:al.curso,desc:`Horario especial guardado hasta las ${doc.hora}${doc.motivo?` · ${doc.motivo}`:""}`}); toast("Horario especial guardado"); fillAutForm(null); }catch(err){ toast(dbErr(err)); } });
 $("#autBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-rut]"); if(!tr) return; const a=S.aut.get(tr.dataset.rut); if(!a) return;
   if(e.target.closest("[data-aedit]")){ fillAutForm(a); $("#autRut").focus(); return; }
-  const b=e.target.closest("[data-adel]"); if(b){ if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar?"; return; } try{ await writeRetry(()=>S.db.doc("autorizaciones/"+a.rut).delete()); toast("Horario especial quitado"); }catch(err){ toast(dbErr(err)); } } });
+  const b=e.target.closest("[data-adel]"); if(b){ if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar?"; return; } try{ await writeRetry(()=>S.db.doc("autorizaciones/"+a.rut).delete()); logHist({cat:"Horarios",tipo:"horario_quitado",rut:a.rut,nombre:a.nombre,curso:a.curso,ref:{rut:a.rut},antes:a,desc:`Horario especial quitado (era hasta las ${a.hora})`}); toast("Horario especial quitado"); }catch(err){ toast(dbErr(err)); } } });
 
 /* ---------- citaciones ----------
    citaciones/{rut_periodo_tramo} {rut,nombre,curso,periodo,tramo,n,estado:"citado"|"asistio"|"no_asistio",fechaCit,horaCit,generada} */
@@ -711,14 +728,30 @@ function nextHabil(){ const d=new Date(); do{ d.setDate(d.getDate()+1); }while(!
 function renderCitaciones(al){ if($("#tab-citaciones").hidden) return; al=al||alertas(); const f=$("#citFiltro").value;
   const rows=al.filter(a=>{ const e=estadoDe(a); return f==="todas" || (f==="pend"&&e==="pend") || (f==="citado"&&e==="citado") || (f==="cerrado"&&(e==="asistio"||e==="no_asistio")); });
   $("#citSub").textContent=`Se genera una alerta cuando un alumno llega a ${umbral()} atrasos sin justificar en ${({mes:"el mes",semestre:"el semestre",anio:"el año"})[S.cfg.periodo||"mes"]}. Cada ${umbral()} atrasos más genera una nueva citación.`;
-  $("#citBody").innerHTML = rows.length ? rows.map(a=>{ const e=estadoDe(a), [lbl,cls]=EST[e]; const extra=a.cit?.fechaCit?`<div class="muted" style="font-size:12px">${esc(a.cit.fechaCit.split("-").reverse().join("-"))} ${esc(a.cit.horaCit||"")}</div>`:"";
-    const acts = e==="pend" ? `<button class="btn sm primary" data-gen>Generar carta PDF</button>` : `<button class="btn sm" data-gen>Carta PDF</button>${e==="citado"?` <button class="btn sm" data-st="asistio">Asistió</button> <button class="btn sm" data-st="no_asistio">No asistió</button>`:""}`;
-    return `<tr data-id="${esc(a.id)}"><td>${esc(a.nombre)}<div class="muted" style="font-size:12px">${esc(fmtRut(a.rut))}</div></td><td>${esc(a.curso)}</td><td>${esc(periodoLabel(a.periodo))}${a.tramo>1?` · ${a.tramo}ª citación`:""}</td><td class="num">${a.tramo*umbral()}${a.n>a.tramo*umbral()?` <span class="muted">(${a.n})</span>`:""}</td><td><span class="pill ${cls}">${lbl}</span>${extra}</td><td>${acts}</td></tr>`; }).join("")
+  $("#citBody").innerHTML = rows.length ? rows.map(a=>{ const e=estadoDe(a), [lbl,cls]=EST[e]; const as_=a.cit?.asistencia, extra=(a.cit?.fechaCit?`<div class="muted" style="font-size:12px">${esc(a.cit.fechaCit.split("-").reverse().join("-"))} ${esc(a.cit.horaCit||"")}</div>`:"")+(e==="asistio"&&as_?`<div class="muted" style="font-size:12px">Asistió el ${esc(String(as_.fecha||"").split("-").reverse().join("-"))}${as_.apoderado?` · ${esc(as_.apoderado)}`:""}</div>`:"")+(e==="no_asistio"&&a.cit?.obs?`<div class="muted" style="font-size:12px">${esc(a.cit.obs)}</div>`:"");
+    const acts = e==="pend" ? `<button class="btn sm primary" data-gen>Generar carta PDF</button>` : `<button class="btn sm" data-gen>Carta PDF</button>${e==="citado"?` <button class="btn sm" data-asis>Asistió</button> <button class="btn sm" data-noasis>No asistió</button>`:e==="asistio"?` <button class="btn sm" data-const>Constancia PDF</button> <button class="btn sm" data-fix>Corregir</button>`:` <button class="btn sm" data-fix>Corregir</button>`}`;
+    return `<tr data-id="${esc(a.id)}"${e==="no_asistio"?' class="cit-no"':""}><td>${esc(a.nombre)}<div class="muted" style="font-size:12px">${esc(fmtRut(a.rut))}</div></td><td>${esc(a.curso)}</td><td>${esc(periodoLabel(a.periodo))}${a.tramo>1?` · ${a.tramo}ª citación`:""}</td><td class="num">${a.tramo*umbral()}${a.n>a.tramo*umbral()?` <span class="muted">(${a.n})</span>`:""}</td><td><span class="pill ${cls}">${lbl}</span>${extra}</td><td>${acts}</td></tr>`; }).join("")
     : `<tr><td colspan="6" class="empty">${f==="pend"?"No hay alumnos pendientes de citación.":"No hay citaciones en esta vista."}</td></tr>`; }
 $("#citBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-id]"); if(!tr) return; const a=alertas().find(x=>x.id===tr.dataset.id); if(!a) return;
   if(e.target.closest("[data-gen]")){ const nx=tr.nextElementSibling; if(nx?.classList.contains("citform")){ nx.remove(); return; }
     const f=document.createElement("tr"); f.className="citform"; f.innerHTML=`<td colspan="6"><div class="row"><label class="f">Fecha de citación<input type="date" data-fc value="${esc(a.cit?.fechaCit||nextHabil())}"></label><label class="f">Hora<input type="time" data-hc value="${esc(a.cit?.horaCit||S.cfg.horaCit||"08:30")}"></label><button class="btn primary" data-pdf>Descargar carta PDF</button><span class="muted" style="font-size:13px">Firma: <b>${esc(firmante(a.curso).nombre)}</b>. Al descargar, la citación queda marcada como "Citado".</span></div></td>`; tr.after(f); return; }
-  const st=e.target.closest("[data-st]"); if(st){ try{ await writeRetry(()=>S.db.doc("citaciones/"+a.id).update({estado:st.dataset.st, cerrada:new Date().toISOString()})); toast("Estado actualizado"); }catch(err){ toast(dbErr(err)); } } });
+  const abre=html=>{ const nx=tr.nextElementSibling; if(nx?.classList.contains("citform")) nx.remove(); const f=document.createElement("tr"); f.className="citform"; f.innerHTML=`<td colspan="6">${html}</td>`; tr.after(f); };
+  if(e.target.closest("[data-asis]")){ abre(`<div class="row"><label class="f">Fecha de asistencia<input type="date" data-fa value="${dateKey(new Date())}"></label><label class="f" style="flex:2 1 200px">Apoderado(a) que asistió<input data-ap placeholder="Nombre (opcional)" autocomplete="off"></label><label class="f" style="flex:2 1 200px">Observación<input data-ob placeholder="Opcional" autocomplete="off"></label><button class="btn primary" data-asis-ok>Registrar asistencia y descargar constancia (PDF)</button><button class="btn" data-cancel>Cancelar</button></div>`); return; }
+  if(e.target.closest("[data-noasis]")){ abre(`<div class="row"><label class="f" style="flex:2 1 260px">Observación<input data-ob placeholder="Opcional" autocomplete="off"></label><button class="btn danger" data-noasis-ok>Confirmar: no asistió</button><button class="btn" data-cancel>Cancelar</button></div>`); return; }
+  if(e.target.closest("[data-fix]")){ const cur=estadoDe(a); abre(`<div class="row"><label class="f">Nuevo estado<select data-ns>${Object.entries(EST).filter(([k])=>k!==cur).map(([k,v])=>`<option value="${k}">${esc(v[0])}</option>`).join("")}</select></label><label class="f" style="flex:2 1 220px">Motivo de la corrección<input data-mo placeholder="Opcional" autocomplete="off"></label><button class="btn primary" data-fix-ok>Guardar corrección</button><button class="btn" data-cancel>Cancelar</button><span class="muted" style="font-size:13px">Queda anotado en el Historial de cambios.</span></div>`); return; }
+  const cb=e.target.closest("[data-const]"); if(cb){ if(!S.dl){ toast("Este visor no permite descargar archivos"); return; } cb.disabled=true;
+    try{ const as_=a.cit?.asistencia||{fecha:String(a.cit?.cerrada||"").slice(0,10)||dateKey(new Date()),apoderado:"",obs:""}; await S.dl.save({filename:`Constancia_${apeDe(a)}_${slug(a.curso)}.pdf`, data:await constanciaPDF(a,as_)}); toast("Constancia descargada"); }
+    catch(err){ if(err?.code!=="declined") toast("No se pudo generar la constancia"); } finally{ cb.disabled=false; } } });
+$("#citBody").addEventListener("click", async e=>{ const b=e.target.closest("[data-asis-ok],[data-noasis-ok],[data-fix-ok],[data-cancel]"); if(!b) return; const f=b.closest("tr.citform"); if(!f) return; if(b.hasAttribute("data-cancel")){ f.remove(); return; }
+  const a=alertas().find(x=>x.id===f.previousElementSibling?.dataset.id); if(!a){ toast("No se encontró la citación"); return; } const val=q=>(f.querySelector(q)?.value||"").trim(); b.disabled=true;
+  try{
+    if(b.hasAttribute("data-asis-ok")){ if(!S.dl){ toast("Este visor no permite descargar archivos"); return; }
+      const asis={fecha:val("[data-fa]")||dateKey(new Date()), apoderado:val("[data-ap]"), obs:val("[data-ob]"), por:quien()};
+      await S.dl.save({filename:`Constancia_${apeDe(a)}_${slug(a.curso)}.pdf`, data:await constanciaPDF(a,asis)});
+      await setEstadoCit(a,"asistio",{asistencia:asis, obs:asis.obs}); toast("Asistencia registrada"); }
+    else if(b.hasAttribute("data-noasis-ok")){ await setEstadoCit(a,"no_asistio",{obs:val("[data-ob]")}); toast("Marcado como «No asistió»"); }
+    else { await setEstadoCit(a,f.querySelector("[data-ns]").value,{motivo:val("[data-mo]")}); toast("Corrección guardada"); }
+  }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo guardar el cambio"); } finally{ b.disabled=false; } });
 $("#citBody").addEventListener("click", async e=>{ const b=e.target.closest("[data-pdf]"); if(!b) return; const f=b.closest("tr.citform"), tr=f.previousElementSibling; const a=alertas().find(x=>x.id===tr.dataset.id); if(!a) return;
   const fc=f.querySelector("[data-fc]").value, hc=f.querySelector("[data-hc]").value; if(!fc||!hc){ toast("Indica fecha y hora de la citación"); return; }
   b.disabled=true;
@@ -726,7 +759,7 @@ $("#citBody").addEventListener("click", async e=>{ const b=e.target.closest("[da
     if(!S.dl){ toast("Este visor no permite descargar archivos"); return; }
     await S.dl.save({filename:`Citacion_${ape}_${slug(a.curso)}.pdf`, data:blob});
     const doc={rut:a.rut,nombre:a.nombre,curso:a.curso,periodo:a.periodo,tramo:a.tramo,n:a.tramo*umbral(),estado:a.cit?.estado&&a.cit.estado!=="pend"?a.cit.estado:"citado",fechaCit:fc,horaCit:hc,generada:new Date().toISOString()};
-    await writeRetry(()=>S.db.doc("citaciones/"+a.id).set(doc)); toast("Carta generada");
+    await writeRetry(()=>S.db.doc("citaciones/"+a.id).update(doc)); logCarta(a,estadoDe(a),doc.estado,fc,hc); toast("Carta generada");
   }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo generar la carta"); } finally{ b.disabled=false; } });
 
 /* ---------- alerta al completar el tope de atrasos sin justificar ---------- */
@@ -741,8 +774,9 @@ $("#alertPdf").addEventListener("click", async ()=>{ const b=$("#alertPdf"); con
   if(!S.dl){ toast("Este visor no permite descargar archivos"); return; } b.disabled=true;
   try{ const blob=await cartaPDF(a, fc, hc); const ape=a.nombre.split(" ").slice(0,2).join("_").normalize("NFD").replace(/[̀-ͯ]/g,"");
     await S.dl.save({filename:`Citacion_${ape}_${slug(a.curso)}.pdf`, data:blob});
-    await writeRetry(()=>S.db.doc("citaciones/"+a.id).set({rut:a.rut,nombre:a.nombre,curso:a.curso,periodo:a.periodo,tramo:a.tramo,n:a.tramo*umbral(),estado:a.cit?.estado&&a.cit.estado!=="pend"?a.cit.estado:"citado",fechaCit:fc,horaCit:hc,generada:new Date().toISOString()}));
-    toast("Citación generada"); closeAlertModal();
+    const est=a.cit?.estado&&a.cit.estado!=="pend"?a.cit.estado:"citado";
+    await writeRetry(()=>S.db.doc("citaciones/"+a.id).update({rut:a.rut,nombre:a.nombre,curso:a.curso,periodo:a.periodo,tramo:a.tramo,n:a.tramo*umbral(),estado:est,fechaCit:fc,horaCit:hc,generada:new Date().toISOString()}));
+    logCarta(a,estadoDe(a),est,fc,hc); toast("Citación generada"); closeAlertModal();
   }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo generar la citación"); } finally{ b.disabled=false; } });
 
 function firmante(curso){ const n=parseInt(String(curso),10); const alto=n>=3; return {nombre:(alto?S.cfg.firma34:S.cfg.firma12)||"Inspector(a) General", cargo:(alto?S.cfg.cargo34:S.cfg.cargo12)||"Inspector(a) General"}; }
@@ -811,7 +845,7 @@ function setJustif(fecha,id,on){ const data=on?{justificado:true,justificadoPor:
 function refreshResultCount(v){ const el=$("#resCnt"); if(!el||!v) return; const pk=periodoKey(v.fecha), mine=cuentaEntries().filter(x=>x.rut===v.rut && x.id!==v.id), add=v.justificado?0:1;
   el.innerHTML=cntHTML(mine.filter(x=>periodoKey(x.fecha)===pk).length+add, mine.filter(x=>x.fecha.slice(0,4)===v.fecha.slice(0,4)).length+add); }
 async function toggleJustif(btn){ const v=S.voucher; if(!v||!v.id) return; const on=!v.justificado; btn.disabled=true;
-  try{ await setJustif(v.fecha,v.id,on); v.justificado=on; btn.textContent=JUST_TXT(on); refreshResultCount(v); toast(on?"Atraso justificado por el apoderado":"Justificación quitada"); }
+  try{ await setJustif(v.fecha,v.id,on); v.justificado=on; btn.textContent=JUST_TXT(on); refreshResultCount(v); logHist({cat:"Atrasos",tipo:"justificacion",rut:v.rut,nombre:v.nombre,curso:v.curso,ref:{fecha:v.fecha,id:v.id},despues:on,desc:`${on?"Atraso justificado por el apoderado":"Justificación quitada"}: ${v.fecha.split("-").reverse().join("-")} ${String(v.hora||"").slice(0,5)}`}); toast(on?"Atraso justificado por el apoderado":"Justificación quitada"); }
   catch(err){ toast(dbErr(err)); } finally{ btn.disabled=false; } }
 function wireVoucher(auto){ const b=$("#resPrint"); if(!b) return; b.addEventListener("click",()=>printVoucher(b)); const j=$("#resJust"); if(j) j.addEventListener("click",()=>toggleJustif(j)); if(auto && S.cfg.voucherAuto!==false) printVoucher(b); }
 
@@ -822,7 +856,7 @@ $("#cfgLogo").addEventListener("change", e=>{ const f=e.target.files[0]; e.targe
   img.onerror=()=>toast("No se pudo leer la imagen"); img.src=url; });
 $("#cfgLogoDel").addEventListener("click",()=>saveCfg({logo:""}));
 $("#cfgForm").addEventListener("submit",e=>{ e.preventDefault(); saveCfg({nombre:$("#cfgNombre").value.trim()||DEF_NAME, hora:$("#cfgHora").value||"08:10", umbral:Math.max(1,Number($("#cfgUmbral").value)||3), periodo:$("#cfgPeriodo").value, firma12:$("#cfgFirma12").value.trim(), cargo12:$("#cfgCargo12").value.trim(), firma34:$("#cfgFirma34").value.trim(), cargo34:$("#cfgCargo34").value.trim(), ciudad:$("#cfgCiudad").value.trim()||"San Fernando", horaCit:$("#cfgHoraCit").value||"08:30", papel:Number($("#cfgPapel").value)||58, voucherAuto:$("#cfgVAuto").checked}); renderAlerts(); document.activeElement?.blur(); });
-async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de datos"); return; } const next={...S.cfg,...patch}; try{ await writeRetry(()=>S.db.doc("config/escuela").set(next)); S.cfg=next; renderBrand(); toast("Configuración guardada"); }catch(err){ toast(dbErr(err)); } }
+async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de datos"); return; } const next={...S.cfg,...patch}, LBL={nombre:"nombre del establecimiento",hora:"hora de ingreso",umbral:"atrasos para citar",periodo:"período de conteo",firma12:"firma 1° y 2°",cargo12:"cargo 1° y 2°",firma34:"firma 3° y 4°",cargo34:"cargo 3° y 4°",ciudad:"ciudad",horaCit:"hora de citación",papel:"papel del boucher",voucherAuto:"boucher automático",logo:"insignia"}, cambios=Object.keys(patch).filter(k=>JSON.stringify(S.cfg[k])!==JSON.stringify(patch[k])); try{ await writeRetry(()=>S.db.doc("config/escuela").set(next)); S.cfg=next; renderBrand(); if(cambios.length) logHist({cat:"Configuración",tipo:"config",desc:`Configuración cambiada: ${cambios.map(k=>LBL[k]||k).join(", ")}`}); toast("Configuración guardada"); }catch(err){ toast(dbErr(err)); } }
 
 /* ---------- subscriptions ---------- */
 let unsubAtr=null;
@@ -881,6 +915,58 @@ document.querySelectorAll("[data-rs]").forEach(b=>b.addEventListener("click",()=
 function applyRol(){ const em=S.auth?.currentUser?.email, dir=!!(em && S.dir && S.dir[em]!==undefined); S.rol=dir?"director":""; document.body.classList.toggle("rol-director",dir);
   document.querySelectorAll("nav.tabs button").forEach(b=>{ b.hidden = dir && b.dataset.tab!=="resumen"; }); if(dir) showTab("resumen"); showUser(); }
 
+/* ---------- historial de cambios ---------- */
+function quien(){ return $("#userName").textContent||""; }
+function apeDe(a){ return a.nombre.split(" ").slice(0,2).join("_").normalize("NFD").replace(/[̀-ͯ]/g,""); }
+function logHist(o){ try{ if(!S.db) return; const d=JSON.parse(JSON.stringify({ts:new Date().toISOString(), por:quien(), ...o})); S.db.collection("historial").add(d).catch(()=>{}); }catch(e){} }
+function logCarta(a,antes,despues,fc,hc){ const base={cat:"Citaciones",rut:a.rut,nombre:a.nombre,curso:a.curso,ref:{id:a.id}}, d=`Carta de citación generada para el ${String(fc).split("-").reverse().join("-")} ${hc} (${periodoLabel(a.periodo)}${a.tramo>1?`, ${a.tramo}ª citación`:""})`;
+  if(antes!==despues) logHist({...base,tipo:"citacion_estado",antes,despues,desc:`${d} · ${EST[antes][0]} → ${EST[despues][0]}`}); else logHist({...base,tipo:"citacion_carta",desc:d}); }
+async function setEstadoCit(a,nuevo,extra){ extra=extra||{}; const antes=estadoDe(a), c=a.cit||{}, ahora=new Date().toISOString(), tramo=a.tramo||c.tramo||1, periodo=a.periodo||c.periodo||"";
+  const patch={rut:a.rut,nombre:a.nombre,curso:a.curso,periodo,tramo,n:tramo*umbral(),estado:nuevo,cambiado:ahora,cambiadoPor:quien(),...extra};
+  if(a.atrasos&&a.atrasos.length) patch.atrasosIds=a.atrasos.map(x=>x.id).filter(Boolean);
+  patch.cerrada=(nuevo==="asistio"||nuevo==="no_asistio")?ahora:""; if(nuevo==="pend"){ patch.fechaCit=""; patch.horaCit=""; }
+  await writeRetry(()=>S.db.doc("citaciones/"+a.id).update(patch));
+  const det=extra.obs||extra.motivo||"";
+  logHist({cat:"Citaciones",tipo:"citacion_estado",rut:a.rut,nombre:a.nombre,curso:a.curso,ref:{id:a.id},antes,despues:nuevo,desc:`${EST[antes][0]} → ${EST[nuevo][0]}${periodo?` (${periodoLabel(periodo)}${tramo>1?`, ${tramo}ª citación`:""})`:""}${det?` · ${det}`:""}`}); }
+async function constanciaPDF(a, as_){
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"letter"}); const W=215.9, M=22, TW=W-2*M; let y=16;
+  const lg=await logoPng(); let tx=M; if(lg){ const h=24, w=Math.min(32,h*lg.w/lg.h); doc.addImage(lg.data,"JPEG",M,y,w,w*lg.h/lg.w); tx=M+w+6; }
+  doc.setTextColor(23,50,92); doc.setFont("helvetica","bold"); doc.setFontSize(12.5); doc.text(doc.splitTextToSize((S.cfg.nombre||DEF_NAME).toUpperCase(), W-M-tx), tx, y+9);
+  doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(90,106,128); doc.text("Inspectoría General", tx, y+19);
+  y=45; doc.setDrawColor(23,50,92); doc.setLineWidth(0.7); doc.line(M,y,W-M,y); doc.setTextColor(18,32,51);
+  y+=9; doc.setFontSize(10.5); doc.text(`${S.cfg.ciudad||"San Fernando"}, ${fechaLarga(new Date())}`, W-M, y, {align:"right"});
+  y+=12; doc.setFont("helvetica","bold"); doc.setFontSize(14); doc.text("CONSTANCIA DE ASISTENCIA DE APODERADO", W/2, y, {align:"center"});
+  y+=6; doc.setFont("helvetica","normal"); doc.setFontSize(10.5); doc.text("Justificación de atrasos", W/2, y, {align:"center"});
+  y+=12; doc.setFontSize(11);
+  const para=t=>{ const ls=doc.splitTextToSize(t,TW); doc.text(ls,M,y,{lineHeightFactor:1.45}); y+=ls.length*5.6+3; };
+  const fa=new Date((as_.fecha||dateKey(new Date()))+"T12:00:00"), fal=`${["domingo","lunes","martes","miércoles","jueves","viernes","sábado"][fa.getDay()]} ${fechaLarga(fa)}`;
+  para(`Inspectoría General deja constancia de que el(la) apoderado(a)${as_.apoderado?` ${as_.apoderado.toUpperCase()},`:""} del(la) estudiante ${a.nombre.toUpperCase()}, RUN ${fmtRut(a.rut)}, del curso ${a.curso}, asistió a Inspectoría General el día ${fal}, en respuesta a la citación por atrasos reiterados, y justificó los siguientes atrasos registrados en ${periodoLabel(a.periodo)}:`);
+  const cols=[["N°",12],["Fecha",48],["Hora de llegada",38],["Hora de ingreso",38],["Minutos",25]]; const tw=cols.reduce((s,c)=>s+c[1],0); let x0=M+(TW-tw)/2;
+  doc.setFillColor(238,242,247); doc.rect(x0,y,tw,7,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(9.5); let xx=x0; cols.forEach(([t,w])=>{ doc.text(t,xx+2,y+4.8); xx+=w; }); y+=7; doc.setFont("helvetica","normal");
+  (a.atrasos||[]).forEach((e,i)=>{ if(y>245){ doc.addPage(); y=20; } const d=new Date(e.fecha+"T12:00:00"); const vals=[String(i+1), `${DIAS[d.getDay()]} ${e.fecha.split("-").reverse().join("-")}`, String(e.hora||"").slice(0,5), e.horaIngreso||S.cfg.hora||"08:10", String(e.min??"")]; xx=x0; vals.forEach((v,j)=>{ doc.text(v,xx+2,y+4.8); xx+=cols[j][1]; }); doc.setDrawColor(213,221,232); doc.setLineWidth(0.2); doc.line(x0,y+7,x0+tw,y+7); y+=7; });
+  y+=7; doc.setFontSize(11); if(as_.obs) para(`Observaciones: ${as_.obs}`); para("Se extiende la presente constancia para los fines que correspondan.");
+  if(y>215){ doc.addPage(); y=30; } y+=22; doc.setDrawColor(18,32,51); doc.setLineWidth(0.3);
+  const x1=M+3, x2=W-M-73; doc.line(x1,y,x1+70,y); doc.line(x2,y,x2+70,y); y+=5; doc.setFont("helvetica","bold"); doc.setFontSize(10.5);
+  const fm=firmante(a.curso); doc.text("Apoderado(a)",x1+35,y,{align:"center"}); doc.text(fm.nombre,x2+35,y,{align:"center"}); doc.setFont("helvetica","normal"); y+=5;
+  doc.text(as_.apoderado||"Nombre y RUN",x1+35,y,{align:"center"}); doc.text(fm.cargo,x2+35,y,{align:"center"}); y+=5; doc.setFontSize(9.5); doc.text(S.cfg.nombre||DEF_NAME,x2+35,y,{align:"center"});
+  return doc.output("blob"); }
+const HIST_UNDO=new Set(["atraso_anulado","justificacion","citacion_estado","alumno_eliminado","alumno_editado","horario_quitado"]);
+function fmtTs(ts){ const d=new Date(ts); return isNaN(d)?"":`${pad2(d.getDate())}-${pad2(d.getMonth()+1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+function renderHist(){ if($("#tab-historial").hidden) return; const cat=$("#hCat").value, t=$("#hTexto").value.trim().toLowerCase(), tc=cleanRut(t);
+  const rows=(S.hist||[]).filter(h=>(!cat||h.cat===cat) && (!t || String(h.nombre||"").toLowerCase().includes(t) || String(h.por||"").toLowerCase().includes(t) || String(h.desc||"").toLowerCase().includes(t) || (tc.length>2 && cleanRut(h.rut||"").includes(tc)))).slice(0,300);
+  $("#hBody").innerHTML = rows.length ? rows.map(h=>`<tr><td style="white-space:nowrap">${esc(fmtTs(h.ts))}</td><td>${esc(h.por||"")}</td><td><span class="pill ${h.cat==="Citaciones"?"w":h.cat==="Atrasos"?"b":"o"}">${esc(h.cat||"")}</span></td><td>${h.nombre?`<b>${esc(h.nombre)}</b>${h.curso?` <span class="muted">· ${esc(h.curso)}</span>`:""}<br>`:""}${esc(h.desc||"")}${h.revertido?` <span class="pill w" title="Deshecho por ${esc(h.revertidoPor||"")}">Deshecho</span>`:""}</td><td>${HIST_UNDO.has(h.tipo)&&!h.revertido?`<button class="btn sm" data-hundo="${esc(h.id)}">Deshacer</button>`:""}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">${S.hist?"No hay movimientos con ese filtro.":"Cargando…"}</td></tr>`; }
+["#hCat","#hTexto"].forEach(x=>$(x).addEventListener("input",renderHist));
+async function histUndo(h){ const r=h.ref||{}, fe=f=>String(f||"").split("-").reverse().join("-");
+  if(h.tipo==="atraso_anulado"){ await writeRetry(()=>S.db.doc("atrasos/"+r.fecha).update({entries:{[r.id]:{anulado:false}}})); logHist({cat:"Atrasos",tipo:"atraso_restaurado",rut:h.rut,nombre:h.nombre,curso:h.curso,ref:r,desc:`Atraso restaurado (se había anulado): ${fe(r.fecha)}`}); }
+  else if(h.tipo==="justificacion"){ const on=!h.despues; await setJustif(r.fecha,r.id,on); logHist({cat:"Atrasos",tipo:"justificacion",rut:h.rut,nombre:h.nombre,curso:h.curso,ref:r,despues:on,desc:`${on?"Atraso justificado de nuevo":"Justificación quitada"} (deshacer historial): ${fe(r.fecha)}`}); }
+  else if(h.tipo==="citacion_estado"){ const c=S.cit.get(r.id)||{}, al=alertas().find(x=>x.id===r.id)||{id:r.id,rut:h.rut,nombre:h.nombre,curso:h.curso,periodo:c.periodo,tramo:c.tramo||1,atrasos:[],cit:c}; await setEstadoCit(al,h.antes||"pend",{motivo:"Deshacer cambio del historial"}); }
+  else if(h.tipo==="alumno_eliminado"||h.tipo==="alumno_editado"){ await upsertAlumno(r.rut,h.antes.nombre,h.antes.curso); logHist({cat:"Alumnos",tipo:"alumno_restaurado",rut:r.rut,nombre:h.antes.nombre,curso:h.antes.curso,desc:`${h.tipo==="alumno_eliminado"?"Alumno restaurado":"Edición deshecha"}: ${h.antes.nombre} (${h.antes.curso})`}); }
+  else if(h.tipo==="horario_quitado"){ await writeRetry(()=>S.db.doc("autorizaciones/"+r.rut).set(h.antes)); logHist({cat:"Horarios",tipo:"horario_restaurado",rut:h.rut,nombre:h.nombre,curso:h.curso,desc:"Horario especial restaurado"}); }
+  await writeRetry(()=>S.db.doc("historial/"+h.id).update({revertido:true,revertidoPor:quien(),revertidoTs:new Date().toISOString()})); }
+$("#hBody").addEventListener("click", async e=>{ const b=e.target.closest("[data-hundo]"); if(!b) return; const h=(S.hist||[]).find(x=>x.id===b.dataset.hundo); if(!h) return;
+  if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar?"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.confirm; b.textContent="Deshacer"; } },3000); return; }
+  b.disabled=true; try{ await histUndo(h); toast("Cambio deshecho"); }catch(err){ toast(err?.code?dbErr(err):"No se pudo deshacer el cambio"); b.disabled=false; } });
+
 /* ---------- sesión ---------- */
 // Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = correo (o UID), valor = nombre.
 async function showUser(){ const u=S.auth?.currentUser; if(!u) return; let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
@@ -927,7 +1013,7 @@ async function boot(){
   S.dl = { save: async ({filename,data}) => { const a=document.createElement("a"); a.href=URL.createObjectURL(data); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),10000); } };
   const db = await connectFirebase();
   if(!db){ renderRegistro(); return; }
-  S.db=db; showUser(); db.doc("config/directores").onSnapshot(sn=>{ S.dir=sn.exists?sn.data():{}; applyRol(); }, ()=>{});
+  S.db=db; showUser(); db.collection("historial").orderBy("ts","desc").limit(500).onSnapshot(snap=>{ S.hist=snap.docs.map(d=>({id:d.id,...d.data()})); renderHist(); }, ()=>{}); db.doc("config/directores").onSnapshot(sn=>{ S.dir=sn.exists?sn.data():{}; applyRol(); }, ()=>{});
   db.doc("config/escuela").onSnapshot(s=>{ if(s.exists){ S.cfg={...S.cfg,...s.data()}; renderBrand(); renderAlerts(); } });
   db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); renderResumen(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
   subscribeAtrasos();
