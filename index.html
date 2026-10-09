@@ -440,12 +440,14 @@ $("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.cla
 /* ---------- bloques de clases (atraso a clase) ---------- */
 function BLOQUES_DEF(){ return [{n:1,ini:"08:10",fin:"08:55"},{n:2,ini:"08:55",fin:"09:40"},{n:3,ini:"09:55",fin:"10:40"},{n:4,ini:"10:40",fin:"11:25"},{n:5,ini:"11:40",fin:"12:25"},{n:6,ini:"12:25",fin:"13:10"},{n:7,ini:"14:10",fin:"14:50"},{n:8,ini:"14:50",fin:"15:30"},{n:9,ini:"15:35",fin:"15:55"},{n:10,ini:"15:55",fin:"16:15"}]; }
 function hm(t){ const [h,m]=String(t).split(":").map(Number); return h*60+m; }
-function bloques(){ const a=Array.isArray(S.cfg.bloques)&&S.cfg.bloques.length?S.cfg.bloques:BLOQUES_DEF(); return [...a].sort((x,y)=>hm(x.ini)-hm(y.ini)); }
+function bloques10(){ const a=Array.isArray(S.cfg.bloques)&&S.cfg.bloques.length?S.cfg.bloques:BLOQUES_DEF(); return [...a].sort((x,y)=>hm(x.ini)-hm(y.ini)); }
+function parLbl(n){ if(typeof n==="string"&&n.includes("-")) return n; n=Number(n); if(!n) return "?"; const a=n%2?n:n-1; return `${a}-${a+1}`; }
+function bloques(){ const b=bloques10(), o=[]; for(let i=0;i+1<b.length;i+=2) o.push({n:`${b[i].n}-${b[i+1].n}`,ini:b[i].ini,fin:b[i+1].fin}); if(b.length%2) o.push({n:String(b[b.length-1].n),ini:b[b.length-1].ini,fin:b[b.length-1].fin}); return o; }
 function bloqueActual(d){ const t=d.getHours()*60+d.getMinutes(); return bloques().find(b=>t>=hm(b.ini)&&t<hm(b.fin))||null; }
 function msgSinBloque(d){ const t=d.getHours()*60+d.getMinutes(), bs=bloques(), sig=bs.find(b=>hm(b.ini)>t);
   if(!sig) return "Terminó la jornada de clases."; if(t<hm(bs[0].ini)) return `Aún no comienzan las clases (primer bloque a las ${bs[0].ini}).`; return `Es recreo: el bloque ${sig.n} comienza a las ${sig.ini}.`; }
 function minsClase(d,b){ return Math.max(0,(d.getHours()*60+d.getMinutes())-hm(b.ini)); }
-function fillBloques(){ const c=$("#cfgBloques"); if(!c) return; c.innerHTML=`<span></span><span class="muted">Inicio</span><span class="muted">Fin</span>`+bloques().map(b=>`<span style="font-weight:700">Bloque ${b.n}</span><input type="time" data-bi="${b.n}" value="${b.ini}"><input type="time" data-bf="${b.n}" value="${b.fin}">`).join(""); }
+function fillBloques(){ const c=$("#cfgBloques"); if(!c) return; c.innerHTML=`<span></span><span class="muted">Inicio</span><span class="muted">Fin</span>`+bloques10().map(b=>`<span style="font-weight:700">Bloque ${b.n}</span><input type="time" data-bi="${b.n}" value="${b.ini}"><input type="time" data-bf="${b.n}" value="${b.fin}">`).join(""); }
 function readBloques(){ return BLOQUES_DEF().map(b=>({n:b.n, ini:$(`#cfgBloques [data-bi="${b.n}"]`)?.value||b.ini, fin:$(`#cfgBloques [data-bf="${b.n}"]`)?.value||b.fin})); }
 
 /* ---------- clock ---------- */
@@ -514,7 +516,7 @@ async function doRegisterClase(al, isNew){
   const d=new Date(), fecha=dateKey(d), bl=bloqueActual(d);
   if(!bl){ setHint(msgSinBloque(d),true); showStage("entry"); return; }
   const min=minsClase(d,bl); if(min<=0){ setHint(`El bloque ${bl.n} recién comienza (${bl.ini}): no hay atraso.`,true); showStage("entry"); return; }
-  const hoy=S.dias.get(fecha), prev=Object.entries(hoy?.entries||{}).find(([k,x])=>x.rut===al.rut && !x.anulado && x.tipo==="clase" && x.bloque===bl.n);
+  const hoy=S.dias.get(fecha), prev=Object.entries(hoy?.entries||{}).find(([k,x])=>x.rut===al.rut && !x.anulado && x.tipo==="clase" && parLbl(x.bloque)===bl.n);
   if(prev){ const [pid,pe]=prev; setVoucher(al,{...pe,id:pid,fecha},{tipo:"clase",bloque:bl.n}); showResult("dup", al, `Ya registraste tu atraso a clase del bloque ${bl.n} hoy a las ${pe.hora.slice(0,5)}.`); return; }
   try{ const en=await addAtraso(al,{tipo:"clase",bloque:bl.n,min,horaIngreso:bl.ini});
     const dk=dateKey(new Date(en.ts)), pk=periodoKey(dk); const all=cuentaEntries().filter(x=>x.rut===al.rut); const has=all.some(x=>x.ts===en.ts)?0:1; const nPer=all.filter(x=>periodoKey(x.fecha)===pk).length+has, nAnio=all.length+has;
@@ -578,7 +580,7 @@ function filtered(){ const a=$("#fDesde").value||"0000", b=$("#fHasta").value||"
 function renderRegistro(){ if($("#tab-registro").hidden) return; const rows=filtered();
   const rl=rows.filter(r=>r.tipo!=="clase"), rc=rl.filter(r=>!r.justificado), rcAll=rows.filter(r=>!r.justificado), nj=rl.length-rc.length, ncl=rows.filter(r=>r.tipo==="clase"&&!r.justificado).length; const uniq=new Set(rc.map(r=>r.rut)); const avg=rc.length?Math.round(rc.reduce((s,r)=>s+(r.min||0),0)/rc.length):0; const byR=new Map(); rcAll.forEach(r=>{ const o=byR.get(r.rut)||{n:0,nombre:r.nombre,curso:r.curso}; o.n++; byR.set(r.rut,o); }); const reinc=[...byR.values()].filter(o=>o.n>=umbral()).length;
   $("#stats").innerHTML=[["Atrasos sin justificar",rc.length],["Justificados",nj],["Atrasos a clases",ncl],["Alumnos",uniq.size],["Promedio min.",avg],[`Con ${umbral()} o más`,reinc]].map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
-  $("#regBody").innerHTML = rows.length ? rows.slice(0,800).map(r=>`<tr><td>${r.fecha.split("-").reverse().join("-")}</td><td>${esc(r.hora)}</td><td class="num">${r.min??""}${r.autorizado?` <span class="pill w" title="Horario especial">${esc(r.autorizado)}</span>`:""}</td><td>${esc(fmtRut(r.rut))}</td><td>${esc(r.nombre)}${r.tipo==="clase"?` <span class="pill w" title="Atraso a clase: bloque ${r.bloque||""} (inicio ${esc(r.horaIngreso||"")})">Clase · B${r.bloque||"?"}</span>`:""}${r.justificado?` <span class="pill o" title="Justificado por apoderado${r.justificadoPor?` · ${esc(r.justificadoPor)}`:""}">Justificado</span>`:""}</td><td>${esc(r.curso)}</td><td style="white-space:nowrap"><button class="btn sm" data-print="${esc(r.fecha)}|${esc(r.id)}" title="Imprimir voucher nuevamente" aria-label="Imprimir voucher nuevamente">🖨️</button> <button class="btn sm danger" data-anular="${esc(r.fecha)}|${esc(r.id)}">Anular</button></td></tr>`).join("") : `<tr><td colspan="7" class="empty">${S.db?"No hay atrasos en este período. Se registran desde la pestaña Ingreso.":"Cargando registros…"}</td></tr>`;
+  $("#regBody").innerHTML = rows.length ? rows.slice(0,800).map(r=>`<tr><td>${r.fecha.split("-").reverse().join("-")}</td><td>${esc(r.hora)}</td><td class="num">${r.min??""}${r.autorizado?` <span class="pill w" title="Horario especial">${esc(r.autorizado)}</span>`:""}</td><td>${esc(fmtRut(r.rut))}</td><td>${esc(r.nombre)}${r.tipo==="clase"?` <span class="pill w" title="Atraso a clase: bloque ${parLbl(r.bloque)} (inicio ${esc(r.horaIngreso||"")})">Clase · B${parLbl(r.bloque)}</span>`:""}${r.justificado?` <span class="pill o" title="Justificado por apoderado${r.justificadoPor?` · ${esc(r.justificadoPor)}`:""}">Justificado</span>`:""}</td><td>${esc(r.curso)}</td><td style="white-space:nowrap"><button class="btn sm" data-print="${esc(r.fecha)}|${esc(r.id)}" title="Imprimir voucher nuevamente" aria-label="Imprimir voucher nuevamente">🖨️</button> <button class="btn sm danger" data-anular="${esc(r.fecha)}|${esc(r.id)}">Anular</button></td></tr>`).join("") : `<tr><td colspan="7" class="empty">${S.db?"No hay atrasos en este período. Se registran desde la pestaña Ingreso.":"Cargando registros…"}</td></tr>`;
   const top=[...byR.values()].sort((a,b)=>b.n-a.n).slice(0,12);
   $("#rank").innerHTML = top.length ? top.map(o=>`<li><span>${esc(o.nombre)} <span class="muted">· ${esc(o.curso)}</span></span><span class="pill ${o.n>=5?"b":o.n>=3?"w":"o"}">${o.n}</span></li>`).join("") : `<li class="muted">Sin datos</li>`; }
 $("#regBody").addEventListener("click", async e=>{ const pb=e.target.closest("button[data-print]"); if(pb){ const [f,id]=pb.dataset.print.split("|"); const en=S.dias.get(f)?.entries?.[id]; if(!en) return;
@@ -614,7 +616,7 @@ async function informePDF(rows, fl){
       doc.setDrawColor(225,231,240); doc.setLineWidth(0.15); doc.line(M,y+5.5,M+tw,y+5.5); y+=5.5; });
     y+=7; doc.setTextColor(18,32,51); };
   table(`Detalle de atrasos (${rows.length})`,[["Fecha",29],["Hora",20],["Min.",11],["RUT",27],["Alumno",52],["Curso",27],["Justif.",21]],
-    rows.map(r=>[`${DIAS[new Date(r.fecha+"T12:00:00").getDay()]} ${dmy(r.fecha)}`, String(r.hora).slice(0,5)+(r.tipo==="clase"?` B${r.bloque}`:""), r.min??"", fmtRut(r.rut), r.nombre, r.curso, r.justificado?"Sí":"No"]), v=>v[6]==="Sí");
+    rows.map(r=>[`${DIAS[new Date(r.fecha+"T12:00:00").getDay()]} ${dmy(r.fecha)}`, String(r.hora).slice(0,5)+(r.tipo==="clase"?` B${parLbl(r.bloque)}`:""), r.min??"", fmtRut(r.rut), r.nombre, r.curso, r.justificado?"Sí":"No"]), v=>v[6]==="Sí");
   const byR=new Map(); rows.forEach(r=>{ const o=byR.get(r.rut)||{nombre:r.nombre,curso:r.curso,n:0,j:0}; if(r.justificado) o.j++; else o.n++; byR.set(r.rut,o); });
   table(`Resumen por estudiante (${byR.size})`,[["Alumno",90],["Curso",34],["Sin justificar",32],["Justificados",32]],
     [...byR.values()].sort((a,b)=>b.n-a.n||b.j-a.j||a.nombre.localeCompare(b.nombre,"es")).map(o=>[o.nombre,o.curso,o.n,o.j]));
@@ -863,7 +865,7 @@ async function voucherPDF(v){
     const d=new Date(v.fecha+"T12:00:00"); row("Fecha",`${["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][d.getDay()]} ${v.fecha.split("-").reverse().join("-")}`);
     row("Hora de ingreso",v.hora.slice(0,5),18,true);
     if(v.tipo==="autorizado") row("Horario autorizado",`${v.horaAut} hrs${v.motivo?` · ${v.motivo}`:""}`,8);
-    else if(v.tipo==="clase"){ row("Bloque",`Bloque ${v.bloque} (inicio ${v.horaIngreso} hrs)`,9,true); row("Atraso",`Llega con ${v.min} min tarde`,9,true); }
+    else if(v.tipo==="clase"){ row("Bloque",`Bloque ${parLbl(v.bloque)} (inicio ${v.horaIngreso} hrs)`,9,true); row("Atraso",`Llega con ${v.min} min tarde`,9,true); }
     else row("Atraso",`${v.min} min (ingreso ${v.horaIngreso} hrs)${v.nPer?` · ${v.nPer}° del mes`:""}`,8);
     if(v.tipo!=="autorizado" && v.justificado) row("Justificación","Justificado por apoderado",8,true);
     dash(); t("AUTORIZADO POR INSPECTORÍA GENERAL",W===80?10:9,true,0.8); t("Presentar este pase al profesor(a) al ingresar a la sala.",6.5,false,4);
@@ -940,7 +942,7 @@ function renderResumen(){ if($("#tab-resumen").hidden) return; const a=$("#rDesd
     rsCard("Hora de llegada",bv(horas),horas,"Hora"),
     rsCard("Día de la semana",bh(sem,true),sem,"Día"),
     rsCard("Por nivel",bh(niveles,true),niveles,"Nivel"),
-    ...(cl.length?[(()=>{ const cb=new Map(); cl.forEach(e=>cb.set(e.bloque,(cb.get(e.bloque)||0)+1)); const it=bloques().map(b=>({l:`Bloque ${b.n} (${b.ini})`,v:cb.get(b.n)||0})); return rsCard("Atrasos a clases por bloque",bh(it,true),it,"Bloque"); })()]:[]),
+    ...(cl.length?[(()=>{ const cb=new Map(); cl.forEach(e=>{ const k=parLbl(e.bloque); cb.set(k,(cb.get(k)||0)+1); }); const it=bloques().map(b=>({l:`Bloque ${b.n} (${b.ini})`,v:cb.get(b.n)||0})); return rsCard("Atrasos a clases por bloque",bh(it,true),it,"Bloque"); })()]:[]),
     rsCard("Cursos con más atrasos (los 10 primeros)",bh(cursos,true),cursos,"Curso"),
     `<div class="rs-card wide"><h3>Estudiantes con más atrasos (los 10 primeros)</h3>${top.length?`<ul class="rank">${top.map(o=>`<li><span>${esc(o.nombre)} <span class="muted">· ${esc(o.curso)}</span></span><span class="pill ${o.n>=5?"b":o.n>=3?"w":"o"}">${o.n}</span></li>`).join("")}</ul>`:rsNada()}</div>`,
     rsCard("Citaciones del año cargado",bh(citItems,false),citItems,"Estado")
