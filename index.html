@@ -163,6 +163,7 @@ body.rol-director .alertbar,body.rol-director #citBadge{display:none!important}
 /* citaciones: no asistió se mantiene en rojo / historial */
 tr.cit-no td{background:var(--bad-soft)}
 tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
+.pad .ok2{grid-column:span 3;background:var(--navy);border-color:var(--navy);color:var(--navy-ink);font-size:22px;letter-spacing:.05em;text-transform:uppercase}
 </style>
 
 <div class="wrap">
@@ -206,7 +207,9 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
               <button type="button">7</button><button type="button">8</button><button type="button">9</button>
               <button type="button">K</button><button type="button">0</button><button type="button" class="alt" data-k="del" aria-label="Borrar">⌫</button>
               <button type="submit" class="ok">Registrar</button>
+              <button type="button" class="ok2" id="btnClase" title="El alumno llegó al colegio a tiempo, pero llega tarde a una clase">Atraso a clase</button>
             </div>
+            <div class="muted" id="claseInfo" style="font-size:13px;text-align:center"></div>
           </form>
         </div>
         <div id="stNew" hidden>
@@ -240,6 +243,7 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
         </div>
         <label class="f">Hora desde<input type="time" id="fHoraDe"></label>
         <label class="f">Hora hasta<input type="time" id="fHoraA"></label>
+        <label class="f">Tipo<select id="fTipo"><option value="">Todos</option><option value="llegada">Llegada</option><option value="clase">A clases</option></select></label>
         <label class="f" style="flex:1 1 200px">Buscar<input id="fTexto" placeholder="Nombre o RUT"></label>
       </div>
       <div class="stats" id="stats"></div>
@@ -371,6 +375,9 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
           <label class="f" style="flex:1 1 160px">Ciudad<input id="cfgCiudad"></label>
           <label class="f" style="flex:1 1 160px">Hora de citación por defecto<input id="cfgHoraCit" type="time"></label>
         </div>
+        <h3 style="margin-top:8px">Bloques de clases</h3>
+        <p class="muted" style="margin:0;font-size:13px">Para el botón "Atraso a clase": los minutos de atraso se cuentan desde el inicio del bloque al que llega el alumno.</p>
+        <div id="cfgBloques" style="display:grid;grid-template-columns:auto 1fr 1fr;gap:6px 10px;align-items:center;max-width:380px"></div>
         <h3 style="margin-top:8px">Boucher de ingreso</h3>
         <div class="row" style="align-items:center">
           <label class="f" style="flex:1 1 160px">Ancho del rollo<select id="cfgPapel"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
@@ -430,18 +437,30 @@ document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("clic
 function showTab(t){ if(S.rol==="director") t="resumen"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="historial") renderHist(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
 $("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.classList.contains("kiosk-mode"); document.body.classList.toggle("kiosk-mode",on); $("#kioskBtn").textContent = on ? "Salir de modo kiosco" : "Modo kiosco"; if(on){ try{ await document.documentElement.requestFullscreen?.(); }catch(e){} try{ await navigator.wakeLock?.request("screen"); }catch(e){} } else { try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch(e){} } $("#rutInput").focus(); });
 
+/* ---------- bloques de clases (atraso a clase) ---------- */
+function BLOQUES_DEF(){ return [{n:1,ini:"08:10",fin:"08:55"},{n:2,ini:"08:55",fin:"09:40"},{n:3,ini:"09:55",fin:"10:40"},{n:4,ini:"10:40",fin:"11:25"},{n:5,ini:"11:40",fin:"12:25"},{n:6,ini:"12:25",fin:"13:10"},{n:7,ini:"14:10",fin:"14:50"},{n:8,ini:"14:50",fin:"15:30"},{n:9,ini:"15:35",fin:"15:55"},{n:10,ini:"15:55",fin:"16:15"}]; }
+function hm(t){ const [h,m]=String(t).split(":").map(Number); return h*60+m; }
+function bloques(){ const a=Array.isArray(S.cfg.bloques)&&S.cfg.bloques.length?S.cfg.bloques:BLOQUES_DEF(); return [...a].sort((x,y)=>hm(x.ini)-hm(y.ini)); }
+function bloqueActual(d){ const t=d.getHours()*60+d.getMinutes(); return bloques().find(b=>t>=hm(b.ini)&&t<hm(b.fin))||null; }
+function msgSinBloque(d){ const t=d.getHours()*60+d.getMinutes(), bs=bloques(), sig=bs.find(b=>hm(b.ini)>t);
+  if(!sig) return "Terminó la jornada de clases."; if(t<hm(bs[0].ini)) return `Aún no comienzan las clases (primer bloque a las ${bs[0].ini}).`; return `Es recreo: el bloque ${sig.n} comienza a las ${sig.ini}.`; }
+function minsClase(d,b){ return Math.max(0,(d.getHours()*60+d.getMinutes())-hm(b.ini)); }
+function fillBloques(){ const c=$("#cfgBloques"); if(!c) return; c.innerHTML=`<span></span><span class="muted">Inicio</span><span class="muted">Fin</span>`+bloques().map(b=>`<span style="font-weight:700">Bloque ${b.n}</span><input type="time" data-bi="${b.n}" value="${b.ini}"><input type="time" data-bf="${b.n}" value="${b.fin}">`).join(""); }
+function readBloques(){ return BLOQUES_DEF().map(b=>({n:b.n, ini:$(`#cfgBloques [data-bi="${b.n}"]`)?.value||b.ini, fin:$(`#cfgBloques [data-bf="${b.n}"]`)?.value||b.fin})); }
+
 /* ---------- clock ---------- */
 const fmtDate = new Intl.DateTimeFormat("es-CL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 let lastDay = dateKey(new Date());
 function tick(){ const d=new Date(); $("#clock").innerHTML = `${pad2(d.getHours())}:${pad2(d.getMinutes())}<span class="sec">${pad2(d.getSeconds())}</span>`; $("#date").textContent = fmtDate.format(d);
   const m=minsLate(d), lf=$("#lateflag"); if(!esDiaHabil(d)){ lf.className="lateflag ontime"; lf.textContent="Hoy no hay clases"; } else if(m>0){ lf.className="lateflag"; lf.textContent=`Atraso: ${m} min desde las ${S.cfg.hora}`; } else { lf.className="lateflag ontime"; lf.textContent=`Hora de ingreso: ${S.cfg.hora}`; }
+  const bl=bloqueActual(d), ci=$("#claseInfo"); if(ci) ci.textContent = !esDiaHabil(d) ? "" : bl ? `Atraso a clase: ahora es el bloque ${bl.n} (inicio ${bl.ini}) · ${minsClase(d,bl)} min` : `Atraso a clase: ${msgSinBloque(d)}`;
   const k=dateKey(d); if(k!==lastDay){ lastDay=k; renderToday(); } }
 setInterval(tick,1000); tick();
 
 /* ---------- branding ---------- */
 const LOGO_DEF="logo.png"; // insignia por defecto; si se sube otra en Configuración, esa tiene prioridad
 function crestHTML(){ return `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="Insignia del establecimiento">`; }
-function renderBrand(){ $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="" style="width:34px;height:34px;object-fit:contain">`; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; } tick(); }
+function renderBrand(){ $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="" style="width:34px;height:34px;object-fit:contain">`; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; fillBloques(); } tick(); }
 renderBrand();
 
 /* ---------- data model ----------
@@ -451,7 +470,7 @@ renderBrand();
 function rebuildAlumnos(){ S.alumnos.clear(); for(const [sl,c] of S.cursos){ for(const [rut,a] of Object.entries(c.alumnos||{})) S.alumnos.set(rut,{rut,nombre:a.nombre,curso:c.nombre,slug:sl}); } $("#cursosList").innerHTML=[...S.cursos.values()].map(c=>`<option value="${esc(c.nombre)}">`).sort().join(""); renderCursoMenu(); }
 function allEntries(){ const out=[]; for(const [f,d] of S.dias){ for(const [id,e] of Object.entries(d.entries||{})){ if(!e.anulado) out.push({...e,id,fecha:f}); } } return out; }
 // Los atrasos justificados por el apoderado no cuentan para el cálculo ni para las citaciones (sí se siguen mostrando en el registro).
-function cuentaEntries(){ return allEntries().filter(e=>!e.justificado); }
+function cuentaEntries(){ return allEntries().filter(e=>!e.justificado && e.tipo!=="clase"); }
 function countsYear(){ const m=new Map(); for(const e of cuentaEntries()) m.set(e.rut,(m.get(e.rut)||0)+1); return m; }
 
 async function writeRetry(fn){ try{ return await fn(); } catch(e){ if(e?.code==="unavailable"||e?.code==="resource-exhausted"){ await new Promise(r=>setTimeout(r,600+Math.random()*900)); return await fn(); } throw e; } }
@@ -462,8 +481,8 @@ async function mergeIntoCurso(sl, nombre, add){ const ref=S.db.doc("cursos/"+sl)
 async function removeFromCurso(sl, ruts){ const c=S.cursos.get(sl); if(!c) return; const al={...(c.alumnos||{})}; ruts.forEach(r=>delete al[r]); if(Object.keys(al).length===0) await writeRetry(()=>S.db.doc("cursos/"+sl).delete()); else await saveCursoDoc(sl,c.nombre,al); }
 async function upsertAlumno(rut,nombre,curso){ const cn=normCurso(curso), sl=slug(cn), prev=S.alumnos.get(rut); if(prev && prev.slug!==sl) await removeFromCurso(prev.slug,[rut]); await mergeIntoCurso(sl,cn,{[rut]:{nombre}}); S.alumnos.set(rut,{rut,nombre,curso:cn,slug:sl}); }
 
-async function addAtraso(al){ const d=new Date(), fecha=dateKey(d), id=d.getTime().toString(36)+Math.random().toString(36).slice(2,6);
-  const entry={rut:al.rut,nombre:al.nombre,curso:al.curso,hora:`${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`,min:minsLate(d,al.rut),horaIngreso:horaIngreso(al.rut,d),ts:d.toISOString()}; const au=autorizacionVigente(al.rut,d); if(au) entry.autorizado=au.hora;
+async function addAtraso(al, ov){ const d=new Date(), fecha=dateKey(d), id=d.getTime().toString(36)+Math.random().toString(36).slice(2,6);
+  const entry={rut:al.rut,nombre:al.nombre,curso:al.curso,hora:`${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`,min:minsLate(d,al.rut),horaIngreso:horaIngreso(al.rut,d),ts:d.toISOString()}; if(ov) Object.assign(entry,ov); else { const au=autorizacionVigente(al.rut,d); if(au) entry.autorizado=au.hora; }
   const ref=S.db.doc("atrasos/"+fecha);
   const snap=await ref.get();
   if(snap.exists) await writeRetry(()=>ref.update({entries:{[id]:entry}}));
@@ -475,9 +494,9 @@ const rutInput=$("#rutInput");
 function setHint(t,err){ const h=$("#rutHint"); h.textContent=t||""; h.className="hint"+(err?" err":""); rutInput.classList.toggle("invalid",!!err); }
 function fmtTyping(v){ const c=cleanRut(v); if(c.length<2) return c; return c.slice(0,-1)+"-"+c.slice(-1); }
 rutInput.addEventListener("input",()=>{ rutInput.value=fmtTyping(rutInput.value); setHint(""); });
-$("#pad").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b||b.type==="submit") return; const c=cleanRut(rutInput.value); rutInput.value = fmtTyping(b.dataset.k==="del" ? c.slice(0,-1) : (c+b.textContent).slice(0,10)); setHint(""); rutInput.focus(); });
+$("#pad").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b||b.type==="submit"||b.id==="btnClase") return; const c=cleanRut(rutInput.value); rutInput.value = fmtTyping(b.dataset.k==="del" ? c.slice(0,-1) : (c+b.textContent).slice(0,10)); setHint(""); rutInput.focus(); });
 function showStage(s){ $("#stEntry").hidden=s!=="entry"; $("#stNew").hidden=s!=="new"; $("#stResult").hidden=s!=="result"; }
-function resetKiosk(){ clearTimeout(S.resetT); S.pendingRut=null; S.voucher=null; rutInput.value=""; setHint(""); showStage("entry"); if(!$("#tab-ingreso").hidden) rutInput.focus(); }
+function resetKiosk(){ clearTimeout(S.resetT); S.pendingRut=null; S.pendingTipo=null; S.voucher=null; rutInput.value=""; setHint(""); showStage("entry"); if(!$("#tab-ingreso").hidden) rutInput.focus(); }
 
 $("#rutForm").addEventListener("submit", async e=>{ e.preventDefault(); if(!S.db){ setHint("Sin conexión a la base de datos.",true); return; }
   const rut=normRut(rutInput.value); if(!rut){ setHint("RUT inválido. Revisa el número y el dígito verificador.",true); return; }
@@ -489,10 +508,27 @@ $("#rutForm").addEventListener("submit", async e=>{ e.preventDefault(); if(!S.db
 
 $("#newCancel").addEventListener("click",resetKiosk);
 $("#newForm").addEventListener("submit", async e=>{ e.preventDefault(); const rut=S.pendingRut; const nombre=titleName($("#newNombre").value), curso=normCurso($("#newCurso").value); if(!rut||!nombre||!curso) return; const b=$("#newSubmit"); b.disabled=true;
-  try{ await upsertAlumno(rut,nombre,curso); await doRegister({rut,nombre,curso}, true); } catch(err){ toast(dbErr(err)); } finally{ b.disabled=false; } });
+  try{ await upsertAlumno(rut,nombre,curso); await (S.pendingTipo==="clase"?doRegisterClase:doRegister)({rut,nombre,curso}, true); } catch(err){ toast(dbErr(err)); } finally{ b.disabled=false; } });
+
+async function doRegisterClase(al, isNew){
+  const d=new Date(), fecha=dateKey(d), bl=bloqueActual(d);
+  if(!bl){ setHint(msgSinBloque(d),true); showStage("entry"); return; }
+  const min=minsClase(d,bl); if(min<=0){ setHint(`El bloque ${bl.n} recién comienza (${bl.ini}): no hay atraso.`,true); showStage("entry"); return; }
+  const hoy=S.dias.get(fecha), prev=Object.entries(hoy?.entries||{}).find(([k,x])=>x.rut===al.rut && !x.anulado && x.tipo==="clase" && x.bloque===bl.n);
+  if(prev){ const [pid,pe]=prev; setVoucher(al,{...pe,id:pid,fecha},{tipo:"clase",bloque:bl.n}); showResult("dup", al, `Ya registraste tu atraso a clase del bloque ${bl.n} hoy a las ${pe.hora.slice(0,5)}.`); return; }
+  try{ const en=await addAtraso(al,{tipo:"clase",bloque:bl.n,min,horaIngreso:bl.ini});
+    setVoucher(al,{...en,fecha:dateKey(new Date(en.ts))},{tipo:"clase",bloque:bl.n});
+    showResult("ok", al, `Atraso a clase registrado a las ${en.hora.slice(0,5)} · Bloque ${bl.n} (inicio ${bl.ini}) · ${min} min`, null, null, isNew);
+  } catch(err){ setHint(dbErr(err),true); showStage("entry"); } }
+$("#btnClase").addEventListener("click", async ()=>{ if(!S.db){ setHint("Sin conexión a la base de datos.",true); return; }
+  const rut=normRut(rutInput.value); if(!rut){ setHint("RUT inválido. Revisa el número y el dígito verificador.",true); return; }
+  const now=new Date(); if(!esDiaHabil(now)){ setHint("Hoy no es día de clases: no se registran atrasos.",true); return; }
+  const al=S.alumnos.get(rut);
+  if(!al){ S.pendingRut=rut; S.pendingTipo="clase"; $("#newRutLbl").textContent=fmtRut(rut); $("#newNombre").value=""; $("#newCurso").value=""; showStage("new"); $("#newNombre").focus(); return; }
+  await doRegisterClase(al); });
 
 async function doRegister(al, isNew){
-  const hoy=S.dias.get(dateKey(new Date())); const prev=Object.values(hoy?.entries||{}).find(x=>x.rut===al.rut && !x.anulado);
+  const hoy=S.dias.get(dateKey(new Date())); const prev=Object.values(hoy?.entries||{}).find(x=>x.rut===al.rut && !x.anulado && x.tipo!=="clase");
   if(prev){ const pid=Object.entries(hoy.entries).find(([k,x])=>x===prev)?.[0]; setVoucher(al,{...prev,id:pid,fecha:dateKey(new Date())},{tipo:"atraso"}); showResult("dup", al, `Ya registraste tu atraso hoy a las ${prev.hora.slice(0,5)}.`); return; }
   try{ const en=await addAtraso(al); const d=new Date(); const mk=dateKey(d).slice(0,7);
     const pk=periodoKey(dateKey(d)); const all=cuentaEntries().filter(x=>x.rut===al.rut); const has=all.some(x=>x.ts===en.ts)?0:1; const nPer=all.filter(x=>periodoKey(x.fecha)===pk).length + has; const nAnio=all.length + has;
@@ -512,11 +548,11 @@ function showResult(kind, al, line, nMes, nAnio, isNew){
   showStage("result"); $("#resOk").addEventListener("click",resetKiosk); $("#resOk").focus();
   clearTimeout(S.resetT); wireVoucher(kind==="ok"); }
 
-function renderToday(){ const d=S.dias.get(dateKey(new Date())); const n=Object.values(d?.entries||{}).filter(x=>!x.anulado).length; $("#todayCount").textContent=`Atrasos de hoy: ${n}`; }
+function renderToday(){ const d=S.dias.get(dateKey(new Date())); const ents=Object.values(d?.entries||{}).filter(x=>!x.anulado), n=ents.filter(x=>x.tipo!=="clase").length, m=ents.length-n; $("#todayCount").textContent=`Atrasos de hoy: ${n}${m?` · a clases: ${m}`:""}`; }
 
 /* ---------- registro ---------- */
 (function initFilters(){ const d=new Date(); $("#fDesde").value=dateKey(new Date(d.getFullYear(),d.getMonth(),1)); $("#fHasta").value=dateKey(d); })();
-["#fDesde","#fHasta","#fHoraDe","#fHoraA","#fTexto"].forEach(s=>$(s).addEventListener("input",()=>{ if(s!=="#fTexto") ensureYear(); renderRegistro(); }));
+["#fDesde","#fHasta","#fHoraDe","#fHoraA","#fTipo","#fTexto"].forEach(s=>$(s).addEventListener("input",()=>{ if(s!=="#fTexto") ensureYear(); renderRegistro(); }));
 function ensureYear(){ const y=Number(($("#fDesde").value||"").slice(0,4)); if(y && y<S.year){ S.year=y; subscribeAtrasos(); } }
 /* ---------- selector de varios cursos para el filtro del Registro ---------- */
 S.fCursos=new Set();
@@ -535,17 +571,17 @@ $("#fCursoMenu").addEventListener("click",e=>{
 document.addEventListener("click",e=>{ if(!e.target.closest("#fCursoBox")) $("#fCursoMenu").hidden=true; });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") $("#fCursoMenu").hidden=true; });
 
-function filtered(){ const a=$("#fDesde").value||"0000", b=$("#fHasta").value||"9999", cs=S.fCursos, hd=$("#fHoraDe").value||"00:00", ha=$("#fHoraA").value||"23:59", t=$("#fTexto").value.trim().toLowerCase(), tc=cleanRut(t);
-  return allEntries().filter(e=>e.fecha>=a && e.fecha<=b && (!cs.size||cs.has(e.curso)) && String(e.hora||"").slice(0,5)>=hd && String(e.hora||"").slice(0,5)<=ha && (!t || e.nombre.toLowerCase().includes(t) || (tc.length>2 && e.rut.replace("-","").includes(tc)))).sort((x,y)=>y.ts.localeCompare(x.ts)); }
+function filtered(){ const a=$("#fDesde").value||"0000", b=$("#fHasta").value||"9999", cs=S.fCursos, tp=$("#fTipo").value, hd=$("#fHoraDe").value||"00:00", ha=$("#fHoraA").value||"23:59", t=$("#fTexto").value.trim().toLowerCase(), tc=cleanRut(t);
+  return allEntries().filter(e=>e.fecha>=a && e.fecha<=b && (!cs.size||cs.has(e.curso)) && (!tp||(tp==="clase")===(e.tipo==="clase")) && String(e.hora||"").slice(0,5)>=hd && String(e.hora||"").slice(0,5)<=ha && (!t || e.nombre.toLowerCase().includes(t) || (tc.length>2 && e.rut.replace("-","").includes(tc)))).sort((x,y)=>y.ts.localeCompare(x.ts)); }
 function renderRegistro(){ if($("#tab-registro").hidden) return; const rows=filtered();
-  const rc=rows.filter(r=>!r.justificado), nj=rows.length-rc.length; const uniq=new Set(rc.map(r=>r.rut)); const avg=rc.length?Math.round(rc.reduce((s,r)=>s+(r.min||0),0)/rc.length):0; const byR=new Map(); rc.forEach(r=>{ const o=byR.get(r.rut)||{n:0,nombre:r.nombre,curso:r.curso}; o.n++; byR.set(r.rut,o); }); const reinc=[...byR.values()].filter(o=>o.n>=umbral()).length;
-  $("#stats").innerHTML=[["Atrasos sin justificar",rc.length],["Justificados",nj],["Alumnos",uniq.size],["Promedio min.",avg],[`Con ${umbral()} o más`,reinc]].map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
-  $("#regBody").innerHTML = rows.length ? rows.slice(0,800).map(r=>`<tr><td>${r.fecha.split("-").reverse().join("-")}</td><td>${esc(r.hora)}</td><td class="num">${r.min??""}${r.autorizado?` <span class="pill w" title="Horario especial">${esc(r.autorizado)}</span>`:""}</td><td>${esc(fmtRut(r.rut))}</td><td>${esc(r.nombre)}${r.justificado?` <span class="pill o" title="Justificado por apoderado${r.justificadoPor?` · ${esc(r.justificadoPor)}`:""}">Justificado</span>`:""}</td><td>${esc(r.curso)}</td><td style="white-space:nowrap"><button class="btn sm" data-print="${esc(r.fecha)}|${esc(r.id)}" title="Imprimir voucher nuevamente" aria-label="Imprimir voucher nuevamente">🖨️</button> <button class="btn sm danger" data-anular="${esc(r.fecha)}|${esc(r.id)}">Anular</button></td></tr>`).join("") : `<tr><td colspan="7" class="empty">${S.db?"No hay atrasos en este período. Se registran desde la pestaña Ingreso.":"Cargando registros…"}</td></tr>`;
+  const rl=rows.filter(r=>r.tipo!=="clase"), rc=rl.filter(r=>!r.justificado), nj=rl.length-rc.length, ncl=rows.filter(r=>r.tipo==="clase"&&!r.justificado).length; const uniq=new Set(rc.map(r=>r.rut)); const avg=rc.length?Math.round(rc.reduce((s,r)=>s+(r.min||0),0)/rc.length):0; const byR=new Map(); rc.forEach(r=>{ const o=byR.get(r.rut)||{n:0,nombre:r.nombre,curso:r.curso}; o.n++; byR.set(r.rut,o); }); const reinc=[...byR.values()].filter(o=>o.n>=umbral()).length;
+  $("#stats").innerHTML=[["Atrasos sin justificar",rc.length],["Justificados",nj],["Atrasos a clases",ncl],["Alumnos",uniq.size],["Promedio min.",avg],[`Con ${umbral()} o más`,reinc]].map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+  $("#regBody").innerHTML = rows.length ? rows.slice(0,800).map(r=>`<tr><td>${r.fecha.split("-").reverse().join("-")}</td><td>${esc(r.hora)}</td><td class="num">${r.min??""}${r.autorizado?` <span class="pill w" title="Horario especial">${esc(r.autorizado)}</span>`:""}</td><td>${esc(fmtRut(r.rut))}</td><td>${esc(r.nombre)}${r.tipo==="clase"?` <span class="pill w" title="Atraso a clase: bloque ${r.bloque||""} (inicio ${esc(r.horaIngreso||"")})">Clase · B${r.bloque||"?"}</span>`:""}${r.justificado?` <span class="pill o" title="Justificado por apoderado${r.justificadoPor?` · ${esc(r.justificadoPor)}`:""}">Justificado</span>`:""}</td><td>${esc(r.curso)}</td><td style="white-space:nowrap"><button class="btn sm" data-print="${esc(r.fecha)}|${esc(r.id)}" title="Imprimir voucher nuevamente" aria-label="Imprimir voucher nuevamente">🖨️</button> <button class="btn sm danger" data-anular="${esc(r.fecha)}|${esc(r.id)}">Anular</button></td></tr>`).join("") : `<tr><td colspan="7" class="empty">${S.db?"No hay atrasos en este período. Se registran desde la pestaña Ingreso.":"Cargando registros…"}</td></tr>`;
   const top=[...byR.values()].sort((a,b)=>b.n-a.n).slice(0,12);
   $("#rank").innerHTML = top.length ? top.map(o=>`<li><span>${esc(o.nombre)} <span class="muted">· ${esc(o.curso)}</span></span><span class="pill ${o.n>=5?"b":o.n>=3?"w":"o"}">${o.n}</span></li>`).join("") : `<li class="muted">Sin datos</li>`; }
 $("#regBody").addEventListener("click", async e=>{ const pb=e.target.closest("button[data-print]"); if(pb){ const [f,id]=pb.dataset.print.split("|"); const en=S.dias.get(f)?.entries?.[id]; if(!en) return;
     const pk=periodoKey(f), nPer=cuentaEntries().filter(x=>x.rut===en.rut && periodoKey(x.fecha)===pk && (x.ts||"")<=(en.ts||"")).length;
-    pb.disabled=true; const ok=await printVoucher(null, mkVoucher({rut:en.rut,nombre:en.nombre,curso:en.curso},{...en,id,fecha:f},{tipo:"atraso",nPer:(S.cfg.periodo==="mes"&&!en.justificado)?nPer:null})); pb.disabled=false; if(ok) toast("Boucher generado"); return; }
+    pb.disabled=true; const ok=await printVoucher(null, mkVoucher({rut:en.rut,nombre:en.nombre,curso:en.curso},{...en,id,fecha:f},{tipo:en.tipo==="clase"?"clase":"atraso",bloque:en.bloque,nPer:(S.cfg.periodo==="mes"&&!en.justificado&&en.tipo!=="clase")?nPer:null})); pb.disabled=false; if(ok) toast("Boucher generado"); return; }
   const b=e.target.closest("button[data-anular]"); if(!b) return;
   if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar?"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.confirm; b.textContent="Anular"; } },3000); return; }
   const [f,id]=b.dataset.anular.split("|"); b.disabled=true; try{ const en=S.dias.get(f)?.entries?.[id]||{}; await writeRetry(()=>S.db.doc("atrasos/"+f).update({entries:{[id]:{anulado:true}}})); logHist({cat:"Atrasos",tipo:"atraso_anulado",rut:en.rut,nombre:en.nombre,curso:en.curso,ref:{fecha:f,id},desc:`Atraso anulado: ${f.split("-").reverse().join("-")} ${String(en.hora||"").slice(0,5)}`}); toast("Atraso anulado"); } catch(err){ toast(dbErr(err)); b.disabled=false; } });
@@ -575,8 +611,8 @@ async function informePDF(rows, fl){
       let xx=M; vals.forEach((v,j)=>{ let t=String(v??""); while(t.length>1 && doc.getTextWidth(t)>cols[j][1]-3) t=t.slice(0,-2)+"…"; doc.text(t,xx+1.5,y+4.2); xx+=cols[j][1]; });
       doc.setDrawColor(225,231,240); doc.setLineWidth(0.15); doc.line(M,y+5.5,M+tw,y+5.5); y+=5.5; });
     y+=7; doc.setTextColor(18,32,51); };
-  table(`Detalle de atrasos (${rows.length})`,[["Fecha",29],["Hora",14],["Min.",11],["RUT",27],["Alumno",58],["Curso",27],["Justif.",21]],
-    rows.map(r=>[`${DIAS[new Date(r.fecha+"T12:00:00").getDay()]} ${dmy(r.fecha)}`, String(r.hora).slice(0,5), r.min??"", fmtRut(r.rut), r.nombre, r.curso, r.justificado?"Sí":"No"]), v=>v[6]==="Sí");
+  table(`Detalle de atrasos (${rows.length})`,[["Fecha",29],["Hora",20],["Min.",11],["RUT",27],["Alumno",52],["Curso",27],["Justif.",21]],
+    rows.map(r=>[`${DIAS[new Date(r.fecha+"T12:00:00").getDay()]} ${dmy(r.fecha)}`, String(r.hora).slice(0,5)+(r.tipo==="clase"?` B${r.bloque}`:""), r.min??"", fmtRut(r.rut), r.nombre, r.curso, r.justificado?"Sí":"No"]), v=>v[6]==="Sí");
   const byR=new Map(); rows.forEach(r=>{ const o=byR.get(r.rut)||{nombre:r.nombre,curso:r.curso,n:0,j:0}; if(r.justificado) o.j++; else o.n++; byR.set(r.rut,o); });
   table(`Resumen por estudiante (${byR.size})`,[["Alumno",90],["Curso",34],["Sin justificar",32],["Justificados",32]],
     [...byR.values()].sort((a,b)=>b.n-a.n||b.j-a.j||a.nombre.localeCompare(b.nombre,"es")).map(o=>[o.nombre,o.curso,o.n,o.j]));
@@ -591,10 +627,10 @@ $("#pdfBtn").addEventListener("click", async ()=>{ const rows=filtered(); if(!ro
   catch(err){ if(err?.code!=="declined") toast("No se pudo generar el informe"); } finally{ b.disabled=false; } });
 
 $("#exportBtn").addEventListener("click", async ()=>{ const rows=filtered(); if(!rows.length){ toast("No hay registros para exportar"); return; }
-  const cnt=new Map(), jus=new Map(); rows.forEach(r=>{ cnt.set(r.rut,(cnt.get(r.rut)||0)+(r.justificado?0:1)); jus.set(r.rut,(jus.get(r.rut)||0)+(r.justificado?1:0)); });
-  const ws1=XLSX.utils.json_to_sheet(rows.slice().reverse().map(r=>({Fecha:r.fecha,Hora:r.hora,"Minutos de atraso":r.min??0,RUT:fmtRut(r.rut),Nombre:r.nombre,Curso:r.curso,Justificado:r.justificado?"Sí":"No"})));
-  const ws2=XLSX.utils.json_to_sheet([...cnt].map(([rut,n])=>{ const r=rows.find(x=>x.rut===rut); return {RUT:fmtRut(rut),Nombre:r.nombre,Curso:r.curso,"Atrasos sin justificar":n,Justificados:jus.get(rut)||0}; }).sort((a,b)=>b["Atrasos sin justificar"]-a["Atrasos sin justificar"]));
-  ws1["!cols"]=[{wch:11},{wch:9},{wch:10},{wch:13},{wch:36},{wch:16},{wch:11}]; ws2["!cols"]=[{wch:13},{wch:36},{wch:16},{wch:20},{wch:12}];
+  const cnt=new Map(), jus=new Map(), cla=new Map(); rows.forEach(r=>{ const c=r.tipo==="clase"; cnt.set(r.rut,(cnt.get(r.rut)||0)+((r.justificado||c)?0:1)); jus.set(r.rut,(jus.get(r.rut)||0)+((r.justificado&&!c)?1:0)); cla.set(r.rut,(cla.get(r.rut)||0)+((c&&!r.justificado)?1:0)); });
+  const ws1=XLSX.utils.json_to_sheet(rows.slice().reverse().map(r=>({Fecha:r.fecha,Hora:r.hora,"Minutos de atraso":r.min??0,RUT:fmtRut(r.rut),Nombre:r.nombre,Curso:r.curso,Justificado:r.justificado?"Sí":"No",Tipo:r.tipo==="clase"?"A clase":"Llegada",Bloque:r.bloque||""})));
+  const ws2=XLSX.utils.json_to_sheet([...cnt].map(([rut,n])=>{ const r=rows.find(x=>x.rut===rut); return {RUT:fmtRut(rut),Nombre:r.nombre,Curso:r.curso,"Atrasos sin justificar":n,Justificados:jus.get(rut)||0,"Atrasos a clases":cla.get(rut)||0}; }).sort((a,b)=>b["Atrasos sin justificar"]-a["Atrasos sin justificar"]));
+  ws1["!cols"]=[{wch:11},{wch:9},{wch:10},{wch:13},{wch:36},{wch:16},{wch:11},{wch:10},{wch:8}]; ws2["!cols"]=[{wch:13},{wch:36},{wch:16},{wch:20},{wch:12},{wch:16}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws1,"Atrasos"); XLSX.utils.book_append_sheet(wb,ws2,"Resumen por alumno");
   const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
   if(!S.dl){ toast("Este visor no permite descargar archivos"); return; }
@@ -820,11 +856,12 @@ async function voucherPDF(v){
     doc.setTextColor(0,0,0);
     if(lg){ const h=W===80?18:15, w=Math.min(CW*0.5,h*lg.w/lg.h), hh=w*lg.h/lg.w; doc.addImage(lg.data,"JPEG",C-w/2,y,w,hh); y+=hh+1; }
     t((S.cfg.nombre||DEF_NAME).toUpperCase(),7.5,true,0.4); t("Inspectoría General",7,false,0.5);
-    dash(); t("PASE DE INGRESO",13,true,0.3); t(v.tipo==="autorizado"?"Horario especial autorizado":"Ingreso con atraso",8,false,0.3); dash();
+    dash(); t("PASE DE INGRESO",13,true,0.3); t(v.tipo==="autorizado"?"Horario especial autorizado":v.tipo==="clase"?"Ingreso con atraso a clases":"Ingreso con atraso",8,false,0.3); dash();
     row("Alumno(a)",v.nombre,10,true); row("RUT",fmtRut(v.rut)); row("Curso",v.curso,10,true);
     const d=new Date(v.fecha+"T12:00:00"); row("Fecha",`${["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][d.getDay()]} ${v.fecha.split("-").reverse().join("-")}`);
     row("Hora de ingreso",v.hora.slice(0,5),18,true);
     if(v.tipo==="autorizado") row("Horario autorizado",`${v.horaAut} hrs${v.motivo?` · ${v.motivo}`:""}`,8);
+    else if(v.tipo==="clase"){ row("Bloque",`Bloque ${v.bloque} (inicio ${v.horaIngreso} hrs)`,9,true); row("Atraso",`Llega con ${v.min} min tarde`,9,true); }
     else row("Atraso",`${v.min} min (ingreso ${v.horaIngreso} hrs)${v.nPer?` · ${v.nPer}° del mes`:""}`,8);
     if(v.tipo!=="autorizado" && v.justificado) row("Justificación","Justificado por apoderado",8,true);
     dash(); t("AUTORIZADO POR INSPECTORÍA GENERAL",W===80?10:9,true,0.8); t("Presentar este pase al profesor(a) al ingresar a la sala.",6.5,false,4);
@@ -840,7 +877,7 @@ async function printVoucher(btn, vv){ const v=vv||S.voucher; if(!v) return false
 function mkVoucher(al, en, extra){ const d=new Date(en.ts||Date.now()); return {id:en.id, justificado:!!en.justificado, nombre:al.nombre, rut:al.rut, curso:al.curso, fecha:en.fecha||dateKey(d), hora:en.hora, min:en.min, horaIngreso:en.horaIngreso||S.cfg.hora, folio:(en.id||d.getTime().toString(36)).slice(-6).toUpperCase(), ...extra}; }
 function setVoucher(al, en, extra){ S.voucher=mkVoucher(al,en,extra); }
 const JUST_TXT=on=>on?"✓ Atraso justificado (quitar)":"Apoderado justifica atraso";
-function voucherBtns(){ const v=S.voucher, j=v&&v.tipo==="atraso"&&v.id?`<button class="btn" id="resJust">${JUST_TXT(v.justificado)}</button>`:""; return `<div class="row" style="justify-content:center;flex-wrap:wrap"><button class="btn primary" id="resPrint">Imprimir boucher</button>${j}<button class="btn" id="resOk">Siguiente alumno</button></div>`; }
+function voucherBtns(){ const v=S.voucher, j=v&&(v.tipo==="atraso"||v.tipo==="clase")&&v.id?`<button class="btn" id="resJust">${JUST_TXT(v.justificado)}</button>`:""; return `<div class="row" style="justify-content:center;flex-wrap:wrap"><button class="btn primary" id="resPrint">Imprimir boucher</button>${j}<button class="btn" id="resOk">Siguiente alumno</button></div>`; }
 function setJustif(fecha,id,on){ const data=on?{justificado:true,justificadoPor:$("#userName").textContent||"",justificadoTs:new Date().toISOString()}:{justificado:false,justificadoPor:"",justificadoTs:""}; return writeRetry(()=>S.db.doc("atrasos/"+fecha).update({entries:{[id]:data}})); }
 function refreshResultCount(v){ const el=$("#resCnt"); if(!el||!v) return; const pk=periodoKey(v.fecha), mine=cuentaEntries().filter(x=>x.rut===v.rut && x.id!==v.id), add=v.justificado?0:1;
   el.innerHTML=cntHTML(mine.filter(x=>periodoKey(x.fecha)===pk).length+add, mine.filter(x=>x.fecha.slice(0,4)===v.fecha.slice(0,4)).length+add); }
@@ -855,8 +892,8 @@ $("#cfgLogo").addEventListener("change", e=>{ const f=e.target.files[0]; e.targe
     let data=c.toDataURL("image/png"); if(data.length>180000) data=c.toDataURL("image/webp",0.85); await saveCfg({logo:data}); };
   img.onerror=()=>toast("No se pudo leer la imagen"); img.src=url; });
 $("#cfgLogoDel").addEventListener("click",()=>saveCfg({logo:""}));
-$("#cfgForm").addEventListener("submit",e=>{ e.preventDefault(); saveCfg({nombre:$("#cfgNombre").value.trim()||DEF_NAME, hora:$("#cfgHora").value||"08:10", umbral:Math.max(1,Number($("#cfgUmbral").value)||3), periodo:$("#cfgPeriodo").value, firma12:$("#cfgFirma12").value.trim(), cargo12:$("#cfgCargo12").value.trim(), firma34:$("#cfgFirma34").value.trim(), cargo34:$("#cfgCargo34").value.trim(), ciudad:$("#cfgCiudad").value.trim()||"San Fernando", horaCit:$("#cfgHoraCit").value||"08:30", papel:Number($("#cfgPapel").value)||58, voucherAuto:$("#cfgVAuto").checked}); renderAlerts(); document.activeElement?.blur(); });
-async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de datos"); return; } const next={...S.cfg,...patch}, LBL={nombre:"nombre del establecimiento",hora:"hora de ingreso",umbral:"atrasos para citar",periodo:"período de conteo",firma12:"firma 1° y 2°",cargo12:"cargo 1° y 2°",firma34:"firma 3° y 4°",cargo34:"cargo 3° y 4°",ciudad:"ciudad",horaCit:"hora de citación",papel:"papel del boucher",voucherAuto:"boucher automático",logo:"insignia"}, cambios=Object.keys(patch).filter(k=>JSON.stringify(S.cfg[k])!==JSON.stringify(patch[k])); try{ await writeRetry(()=>S.db.doc("config/escuela").set(next)); S.cfg=next; renderBrand(); if(cambios.length) logHist({cat:"Configuración",tipo:"config",desc:`Configuración cambiada: ${cambios.map(k=>LBL[k]||k).join(", ")}`}); toast("Configuración guardada"); }catch(err){ toast(dbErr(err)); } }
+$("#cfgForm").addEventListener("submit",e=>{ e.preventDefault(); const bl=readBloques(), bad=bl.find(b=>hm(b.ini)>=hm(b.fin)); if(bad){ toast(`En el bloque ${bad.n}, el inicio debe ser antes del fin`); return; } saveCfg({bloques:bl, nombre:$("#cfgNombre").value.trim()||DEF_NAME, hora:$("#cfgHora").value||"08:10", umbral:Math.max(1,Number($("#cfgUmbral").value)||3), periodo:$("#cfgPeriodo").value, firma12:$("#cfgFirma12").value.trim(), cargo12:$("#cfgCargo12").value.trim(), firma34:$("#cfgFirma34").value.trim(), cargo34:$("#cfgCargo34").value.trim(), ciudad:$("#cfgCiudad").value.trim()||"San Fernando", horaCit:$("#cfgHoraCit").value||"08:30", papel:Number($("#cfgPapel").value)||58, voucherAuto:$("#cfgVAuto").checked}); renderAlerts(); document.activeElement?.blur(); });
+async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de datos"); return; } const next={...S.cfg,...patch}, LBL={nombre:"nombre del establecimiento",hora:"hora de ingreso",umbral:"atrasos para citar",periodo:"período de conteo",firma12:"firma 1° y 2°",cargo12:"cargo 1° y 2°",firma34:"firma 3° y 4°",cargo34:"cargo 3° y 4°",ciudad:"ciudad",horaCit:"hora de citación",papel:"papel del boucher",voucherAuto:"boucher automático",logo:"insignia",bloques:"bloques de clases"}, cambios=Object.keys(patch).filter(k=>JSON.stringify(S.cfg[k])!==JSON.stringify(patch[k])); try{ await writeRetry(()=>S.db.doc("config/escuela").set(next)); S.cfg=next; renderBrand(); if(cambios.length) logHist({cat:"Configuración",tipo:"config",desc:`Configuración cambiada: ${cambios.map(k=>LBL[k]||k).join(", ")}`}); toast("Configuración guardada"); }catch(err){ toast(dbErr(err)); } }
 
 /* ---------- subscriptions ---------- */
 let unsubAtr=null;
@@ -883,12 +920,12 @@ function rsSerie(rows,a,b){ if(!rows.length) return {items:[],titulo:"Atrasos po
   rows.forEach(e=>{ const k=e.fecha.slice(0,7); m.set(k,(m.get(k)||0)+1); }); for(let d=new Date(t0.getFullYear(),t0.getMonth(),1); d<=t1; d.setMonth(d.getMonth()+1)){ const k=dateKey(d).slice(0,7); items.push({l:`${MESES[d.getMonth()]} ${d.getFullYear()}`, s:MESES[d.getMonth()].slice(0,3), v:m.get(k)||0}); }
   return {items,titulo:"Atrasos por mes"}; }
 function renderResumen(){ if($("#tab-resumen").hidden) return; const a=$("#rDesde").value||"0000", b=$("#rHasta").value||"9999";
-  const all=allEntries().filter(e=>e.fecha>=a && e.fecha<=b), rows=all.filter(e=>!e.justificado), nj=all.length-rows.length;
+  const all0=allEntries().filter(e=>e.fecha>=a && e.fecha<=b), all=all0.filter(e=>e.tipo!=="clase"), rows=all.filter(e=>!e.justificado), nj=all.length-rows.length, cl=all0.filter(e=>e.tipo==="clase"&&!e.justificado);
   const est=new Map(); rows.forEach(e=>{ const o=est.get(e.rut)||{nombre:e.nombre,curso:e.curso,n:0}; o.n++; est.set(e.rut,o); });
   const avg=rows.length?Math.round(rows.reduce((s,e)=>s+(e.min||0),0)/rows.length):0, alerta=[...est.values()].filter(o=>o.n>=umbral()).length;
-  const pct=S.alumnos.size?Math.round(est.size/S.alumnos.size*100):null, hoy=dateKey(new Date()), hoyN=allEntries().filter(e=>e.fecha===hoy && !e.justificado).length;
+  const pct=S.alumnos.size?Math.round(est.size/S.alumnos.size*100):null, hoy=dateKey(new Date()), hoyN=allEntries().filter(e=>e.fecha===hoy && !e.justificado && e.tipo!=="clase").length;
   const cits=alertas(), nCit=est=>cits.filter(x=>estadoDe(x)===est).length;
-  $("#rsKpis").innerHTML=[[rows.length,"Atrasos sin justificar"],[nj,"Justificados"],[est.size,`Estudiantes con atrasos${pct!=null?` (${pct}% del alumnado)`:""}`],[avg,"Promedio de minutos"],[alerta,`Con ${umbral()} o más atrasos`],[nCit("pend"),"Citaciones pendientes"],[hoyN,"Atrasos de hoy"]].map(([v,l])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+  $("#rsKpis").innerHTML=[[rows.length,"Atrasos sin justificar"],[nj,"Justificados"],[cl.length,"Atrasos a clases"],[est.size,`Estudiantes con atrasos${pct!=null?` (${pct}% del alumnado)`:""}`],[avg,"Promedio de minutos"],[alerta,`Con ${umbral()} o más atrasos`],[nCit("pend"),"Citaciones pendientes"],[hoyN,"Atrasos de hoy"]].map(([v,l])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
   const serie=rsSerie(rows,a,b);
   const hh=new Map(); rows.forEach(e=>{ const h=Number(String(e.hora).slice(0,2)); hh.set(h,(hh.get(h)||0)+1); }); const hs=[...hh.keys()], horas=[]; if(hs.length) for(let h=Math.min(...hs); h<=Math.max(...hs); h++) horas.push({l:`${pad2(h)}:00 a ${pad2(h)}:59`, s:`${pad2(h)}h`, v:hh.get(h)||0});
   const wd=new Map(); rows.forEach(e=>{ const d=new Date(e.fecha+"T12:00:00").getDay(); wd.set(d,(wd.get(d)||0)+1); }); const sem=[1,2,3,4,5,6,0].filter(d=>d>=1&&d<=5||wd.get(d)).map(d=>({l:["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][d], s:RS_DIAS[d], v:wd.get(d)||0}));
@@ -901,6 +938,7 @@ function renderResumen(){ if($("#tab-resumen").hidden) return; const a=$("#rDesd
     rsCard("Hora de llegada",bv(horas),horas,"Hora"),
     rsCard("Día de la semana",bh(sem,true),sem,"Día"),
     rsCard("Por nivel",bh(niveles,true),niveles,"Nivel"),
+    ...(cl.length?[(()=>{ const cb=new Map(); cl.forEach(e=>cb.set(e.bloque,(cb.get(e.bloque)||0)+1)); const it=bloques().map(b=>({l:`Bloque ${b.n} (${b.ini})`,v:cb.get(b.n)||0})); return rsCard("Atrasos a clases por bloque",bh(it,true),it,"Bloque"); })()]:[]),
     rsCard("Cursos con más atrasos (los 10 primeros)",bh(cursos,true),cursos,"Curso"),
     `<div class="rs-card wide"><h3>Estudiantes con más atrasos (los 10 primeros)</h3>${top.length?`<ul class="rank">${top.map(o=>`<li><span>${esc(o.nombre)} <span class="muted">· ${esc(o.curso)}</span></span><span class="pill ${o.n>=5?"b":o.n>=3?"w":"o"}">${o.n}</span></li>`).join("")}</ul>`:rsNada()}</div>`,
     rsCard("Citaciones del año cargado",bh(citItems,false),citItems,"Estado")
