@@ -119,6 +119,7 @@ tbody tr:last-child td{border-bottom:0}
 .pill.b{background:var(--bad-soft);color:var(--bad)}
 .pill.o{background:var(--ok-soft);color:var(--ok)}
 .scroll{max-height:520px;overflow:auto}
+.scroll.reg{max-height:78vh;font-size:15px}.scroll.reg td,.scroll.reg th{padding-top:11px;padding-bottom:11px}.rank{columns:2 280px;column-gap:28px}.rank li{break-inside:avoid}
 .empty{padding:28px;text-align:center;color:var(--muted)}
 .rank li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
 .rank li span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -247,10 +248,9 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
         <label class="f" style="flex:1 1 200px">Buscar<input id="fTexto" placeholder="Nombre o RUT"></label>
       </div>
       <div class="stats" id="stats"></div>
-      <div class="grid2">
-        <div class="tbl scroll"><table><thead><tr><th>Fecha</th><th>Hora</th><th class="num">Min.</th><th>RUT</th><th>Alumno</th><th>Curso</th><th></th></tr></thead><tbody id="regBody"></tbody></table></div>
-        <div class="panel" style="background:var(--surface-2)"><h3>Más atrasos en el período</h3><ul class="rank" id="rank"></ul></div>
-      </div>
+      <div class="row" style="margin:4px 0 10px"><button type="button" class="btn sm" id="btnRank" aria-expanded="false">Ver quiénes tienen más atrasos en el período</button></div>
+      <div class="panel" id="rankPanel" hidden style="background:var(--surface-2);margin-bottom:12px"><h3>Más atrasos en el período</h3><ul class="rank" id="rank"></ul></div>
+      <div class="tbl scroll reg"><table><thead><tr><th>Fecha</th><th>Hora</th><th class="num">Min.</th><th>RUT</th><th>Alumno</th><th>Curso</th><th class="num" title="Atrasos sin justificar del período, contados desde la última asistencia del apoderado">N° atrasos</th><th></th></tr></thead><tbody id="regBody"></tbody></table></div>
     </div>
   </section>
 
@@ -472,7 +472,8 @@ renderBrand();
 function rebuildAlumnos(){ S.alumnos.clear(); for(const [sl,c] of S.cursos){ for(const [rut,a] of Object.entries(c.alumnos||{})) S.alumnos.set(rut,{rut,nombre:a.nombre,curso:c.nombre,slug:sl}); } $("#cursosList").innerHTML=[...S.cursos.values()].map(c=>`<option value="${esc(c.nombre)}">`).sort().join(""); renderCursoMenu(); }
 function allEntries(){ const out=[]; for(const [f,d] of S.dias){ for(const [id,e] of Object.entries(d.entries||{})){ if(!e.anulado) out.push({...e,id,fecha:f}); } } return out; }
 // Los atrasos justificados por el apoderado no cuentan para el cálculo ni para las citaciones (sí se siguen mostrando en el registro).
-function cuentaEntries(){ return allEntries().filter(e=>!e.justificado); }
+function resetsCit(){ const m=new Map(); for(const c of S.cit.values()){ if(c.estado==="asistio"&&c.cerrada&&c.rut){ const a=m.get(c.rut)||[]; a.push(c.cerrada); m.set(c.rut,a); } } for(const a of m.values()) a.sort(); return m; }
+function cuentaEntries(){ const R=resetsCit(); return allEntries().filter(e=>{ if(e.justificado) return false; const a=R.get(e.rut); return !a||(e.ts||"")>a[a.length-1]; }); }
 function countsYear(){ const m=new Map(); for(const e of cuentaEntries()) m.set(e.rut,(m.get(e.rut)||0)+1); return m; }
 
 async function writeRetry(fn){ try{ return await fn(); } catch(e){ if(e?.code==="unavailable"||e?.code==="resource-exhausted"){ await new Promise(r=>setTimeout(r,600+Math.random()*900)); return await fn(); } throw e; } }
@@ -580,9 +581,11 @@ function filtered(){ const a=$("#fDesde").value||"0000", b=$("#fHasta").value||"
 function renderRegistro(){ if($("#tab-registro").hidden) return; const rows=filtered();
   const rl=rows.filter(r=>r.tipo!=="clase"), rc=rl.filter(r=>!r.justificado), rcAll=rows.filter(r=>!r.justificado), nj=rl.length-rc.length, ncl=rows.filter(r=>r.tipo==="clase"&&!r.justificado).length; const uniq=new Set(rc.map(r=>r.rut)); const avg=rc.length?Math.round(rc.reduce((s,r)=>s+(r.min||0),0)/rc.length):0; const byR=new Map(); rcAll.forEach(r=>{ const o=byR.get(r.rut)||{n:0,nombre:r.nombre,curso:r.curso}; o.n++; byR.set(r.rut,o); }); const reinc=[...byR.values()].filter(o=>o.n>=umbral()).length;
   $("#stats").innerHTML=[["Atrasos sin justificar",rc.length],["Justificados",nj],["Atrasos a clases",ncl],["Alumnos",uniq.size],["Promedio min.",avg],[`Con ${umbral()} o más`,reinc]].map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
-  $("#regBody").innerHTML = rows.length ? rows.slice(0,800).map(r=>`<tr><td>${r.fecha.split("-").reverse().join("-")}</td><td>${esc(r.hora)}</td><td class="num">${r.min??""}${r.autorizado?` <span class="pill w" title="Horario especial">${esc(r.autorizado)}</span>`:""}</td><td>${esc(fmtRut(r.rut))}</td><td>${esc(r.nombre)}${r.tipo==="clase"?` <span class="pill w" title="Atraso a clase: bloque ${parLbl(r.bloque)} (inicio ${esc(r.horaIngreso||"")})">Clase · B${parLbl(r.bloque)}</span>`:""}${r.justificado?` <span class="pill o" title="Justificado por apoderado${r.justificadoPor?` · ${esc(r.justificadoPor)}`:""}">Justificado</span>`:""}</td><td>${esc(r.curso)}</td><td style="white-space:nowrap"><button class="btn sm" data-print="${esc(r.fecha)}|${esc(r.id)}" title="Imprimir voucher nuevamente" aria-label="Imprimir voucher nuevamente">🖨️</button> <button class="btn sm danger" data-anular="${esc(r.fecha)}|${esc(r.id)}">Anular</button></td></tr>`).join("") : `<tr><td colspan="7" class="empty">${S.db?"No hay atrasos en este período. Se registran desde la pestaña Ingreso.":"Cargando registros…"}</td></tr>`;
+  const RS=resetsCit(), byC=new Map(); rcAll.forEach(x=>{ const a=RS.get(x.rut); if(!a||(x.ts||"")>a[a.length-1]) byC.set(x.rut,(byC.get(x.rut)||0)+1); });
+  $("#regBody").innerHTML = rows.length ? rows.slice(0,800).map(r=>`<tr><td>${r.fecha.split("-").reverse().join("-")}</td><td>${esc(r.hora)}</td><td class="num">${r.min??""}${r.autorizado?` <span class="pill w" title="Horario especial">${esc(r.autorizado)}</span>`:""}</td><td>${esc(fmtRut(r.rut))}</td><td>${esc(r.nombre)}${r.tipo==="clase"?` <span class="pill w" title="Atraso a clase: bloque ${parLbl(r.bloque)} (inicio ${esc(r.horaIngreso||"")})">Clase · B${parLbl(r.bloque)}</span>`:""}${r.justificado?` <span class="pill o" title="Justificado por apoderado${r.justificadoPor?` · ${esc(r.justificadoPor)}`:""}">Justificado</span>`:""}</td><td>${esc(r.curso)}</td><td class="num"><b>${byC.get(r.rut)||0}</b></td><td style="white-space:nowrap"><button class="btn sm" data-print="${esc(r.fecha)}|${esc(r.id)}" title="Imprimir voucher nuevamente" aria-label="Imprimir voucher nuevamente">🖨️</button> <button class="btn sm danger" data-anular="${esc(r.fecha)}|${esc(r.id)}">Anular</button></td></tr>`).join("") : `<tr><td colspan="8" class="empty">${S.db?"No hay atrasos en este período. Se registran desde la pestaña Ingreso.":"Cargando registros…"}</td></tr>`;
   const top=[...byR.values()].sort((a,b)=>b.n-a.n).slice(0,12);
   $("#rank").innerHTML = top.length ? top.map(o=>`<li><span>${esc(o.nombre)} <span class="muted">· ${esc(o.curso)}</span></span><span class="pill ${o.n>=5?"b":o.n>=3?"w":"o"}">${o.n}</span></li>`).join("") : `<li class="muted">Sin datos</li>`; }
+$("#btnRank").addEventListener("click",()=>{ const p=$("#rankPanel"), b=$("#btnRank"); p.hidden=!p.hidden; b.setAttribute("aria-expanded",String(!p.hidden)); b.textContent=p.hidden?"Ver quiénes tienen más atrasos en el período":"Ocultar ranking de atrasos"; });
 $("#regBody").addEventListener("click", async e=>{ const pb=e.target.closest("button[data-print]"); if(pb){ const [f,id]=pb.dataset.print.split("|"); const en=S.dias.get(f)?.entries?.[id]; if(!en) return;
     const pk=periodoKey(f), nPer=cuentaEntries().filter(x=>x.rut===en.rut && periodoKey(x.fecha)===pk && (x.ts||"")<=(en.ts||"")).length;
     pb.disabled=true; const ok=await printVoucher(null, mkVoucher({rut:en.rut,nombre:en.nombre,curso:en.curso},{...en,id,fecha:f},{tipo:en.tipo==="clase"?"clase":"atraso",bloque:en.bloque,nPer:(S.cfg.periodo==="mes"&&!en.justificado)?nPer:null})); pb.disabled=false; if(ok) toast("Boucher generado"); return; }
@@ -753,9 +756,10 @@ function periodoKey(fecha){ const y=fecha.slice(0,4), m=Number(fecha.slice(5,7))
 function periodoLabel(k){ if(/^\d{4}$/.test(k)) return `el año escolar ${k}`; if(/-S\d$/.test(k)) return `el ${k.endsWith("1")?"primer":"segundo"} semestre ${k.slice(0,4)}`; return `${MESES[Number(k.slice(5,7))-1]} de ${k.slice(0,4)}`; }
 function fechaLarga(d){ return `${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`; }
 function alertas(){ const u=umbral(), g=new Map();
-  for(const e of cuentaEntries()){ const pk=periodoKey(e.fecha), k=e.rut+"|"+pk; if(!g.has(k)) g.set(k,{rut:e.rut,periodo:pk,list:[]}); g.get(k).list.push(e); }
-  const out=[]; for(const a of g.values()){ a.list.sort((x,y)=>x.ts.localeCompare(y.ts)); const al=S.alumnos.get(a.rut)||a.list[a.list.length-1];
-    for(let t=1;t<=Math.floor(a.list.length/u);t++){ const id=`${a.rut}_${a.periodo}_${t}`; out.push({id, rut:a.rut, nombre:al.nombre, curso:al.curso, periodo:a.periodo, tramo:t, n:a.list.length, atrasos:a.list.slice(0,t*u), cit:S.cit.get(id)}); } }
+  for(const e of allEntries().filter(x=>!x.justificado)){ const pk=periodoKey(e.fecha), k=e.rut+"|"+pk; if(!g.has(k)) g.set(k,{rut:e.rut,periodo:pk,list:[]}); g.get(k).list.push(e); }
+  const R=resetsCit(), out=[]; for(const a of g.values()){ a.list.sort((x,y)=>x.ts.localeCompare(y.ts)); const al=S.alumnos.get(a.rut)||a.list[a.list.length-1], rs=R.get(a.rut)||[], ciclos=new Map();
+    for(const e of a.list){ const c=rs.filter(x=>x<(e.ts||"")).length; if(!ciclos.has(c)) ciclos.set(c,[]); ciclos.get(c).push(e); }
+    let tg=0; for(const [,L] of [...ciclos].sort((x,y)=>x[0]-y[0])){ for(let t=1;t<=Math.floor(L.length/u);t++){ tg++; const id=`${a.rut}_${a.periodo}_${tg}`; out.push({id, rut:a.rut, nombre:al.nombre, curso:al.curso, periodo:a.periodo, tramo:tg, tramoC:t, n:L.length, atrasos:L.slice(0,t*u), cit:S.cit.get(id)}); } } }
   return out.sort((a,b)=>(b.atrasos.at(-1).ts).localeCompare(a.atrasos.at(-1).ts)); }
 function estadoDe(a){ return a.cit?.estado || "pend"; }
 function renderAlerts(){ const al=alertas(); const pend=al.filter(a=>estadoDe(a)==="pend"); const b=$("#citBadge"); b.textContent=pend.length; b.hidden=!pend.length;
@@ -770,7 +774,7 @@ function renderCitaciones(al){ if($("#tab-citaciones").hidden) return; al=al||al
   $("#citSub").textContent=`Se genera una alerta cuando un alumno llega a ${umbral()} atrasos sin justificar en ${({mes:"el mes",semestre:"el semestre",anio:"el año"})[S.cfg.periodo||"mes"]}. Cada ${umbral()} atrasos más genera una nueva citación.`;
   $("#citBody").innerHTML = rows.length ? rows.map(a=>{ const e=estadoDe(a), [lbl,cls]=EST[e]; const as_=a.cit?.asistencia, extra=(a.cit?.fechaCit?`<div class="muted" style="font-size:12px">${esc(a.cit.fechaCit.split("-").reverse().join("-"))} ${esc(a.cit.horaCit||"")}</div>`:"")+(e==="asistio"&&as_?`<div class="muted" style="font-size:12px">Asistió el ${esc(String(as_.fecha||"").split("-").reverse().join("-"))}${as_.apoderado?` · ${esc(as_.apoderado)}`:""}</div>`:"")+(e==="no_asistio"&&a.cit?.obs?`<div class="muted" style="font-size:12px">${esc(a.cit.obs)}</div>`:"");
     const acts = e==="pend" ? `<button class="btn sm primary" data-gen>Generar carta PDF</button>` : `<button class="btn sm" data-gen>Carta PDF</button>${e==="citado"?` <button class="btn sm" data-asis>Asistió</button> <button class="btn sm" data-noasis>No asistió</button>`:e==="asistio"?` <button class="btn sm" data-const>Constancia PDF</button> <button class="btn sm" data-fix>Corregir</button>`:` <button class="btn sm" data-fix>Corregir</button>`}`;
-    return `<tr data-id="${esc(a.id)}"${e==="no_asistio"?' class="cit-no"':""}><td>${esc(a.nombre)}<div class="muted" style="font-size:12px">${esc(fmtRut(a.rut))}</div></td><td>${esc(a.curso)}</td><td>${esc(periodoLabel(a.periodo))}${a.tramo>1?` · ${a.tramo}ª citación`:""}</td><td class="num">${a.tramo*umbral()}${a.n>a.tramo*umbral()?` <span class="muted">(${a.n})</span>`:""}</td><td><span class="pill ${cls}">${lbl}</span>${extra}</td><td>${acts}</td></tr>`; }).join("")
+    return `<tr data-id="${esc(a.id)}"${e==="no_asistio"?' class="cit-no"':""}><td>${esc(a.nombre)}<div class="muted" style="font-size:12px">${esc(fmtRut(a.rut))}</div></td><td>${esc(a.curso)}</td><td>${esc(periodoLabel(a.periodo))}${a.tramo>1?` · ${a.tramo}ª citación`:""}</td><td class="num">${a.tramoC*umbral()}${a.n>a.tramoC*umbral()?` <span class="muted">(${a.n})</span>`:""}</td><td><span class="pill ${cls}">${lbl}</span>${extra}</td><td>${acts}</td></tr>`; }).join("")
     : `<tr><td colspan="6" class="empty">${qs.length?"Ninguna citación coincide con la búsqueda.":f==="pend"?"No hay alumnos pendientes de citación.":"No hay citaciones en esta vista."}</td></tr>`; }
 $("#citBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-id]"); if(!tr) return; const a=alertas().find(x=>x.id===tr.dataset.id); if(!a) return;
   if(e.target.closest("[data-gen]")){ const nx=tr.nextElementSibling; if(nx?.classList.contains("citform")){ nx.remove(); return; }
