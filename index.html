@@ -390,6 +390,11 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
         </div>
         <div><button class="btn primary" type="submit">Guardar configuración</button></div>
       </form>
+      <div class="panel" style="background:var(--surface-2);margin-top:16px;display:grid;gap:10px;max-width:560px">
+        <h3 style="margin:0">Herramienta de prueba</h3>
+        <p class="muted" style="margin:0;font-size:13px">Crea 3 atrasos anteriores (en los últimos días hábiles) para un alumno, de modo que el próximo ingreso sea su 4° atraso. Quedan marcados como «prueba» y se pueden borrar después.</p>
+        <div class="row"><label class="f" style="flex:1 1 200px">RUT del alumno<input id="tstRut" value="19.340.660-2" autocomplete="off"></label><button class="btn" type="button" id="tstCrear">Crear 3 atrasos de prueba</button><button class="btn danger" type="button" id="tstBorrar">Borrar atrasos de prueba</button></div>
+      </div>
       <p class="muted" style="font-size:13px;margin-top:14px">Los datos se guardan en línea y los ven todas las personas con acceso a esta página (inspectores, portería). El computador de ingreso debe tener la página abierta con una cuenta que tenga permiso de Colaborador o superior.</p>
     </div>
   </section>
@@ -409,6 +414,16 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
     <div id="alertMsg" style="font-size:17px"></div>
     <div class="row"><label class="f">Fecha de citación<input type="date" id="alertFc"></label><label class="f">Hora<input type="time" id="alertHc"></label></div>
     <div class="row"><button class="btn primary" id="alertPdf" type="button">Descargar citación (PDF)</button><button class="btn" id="alertClose" type="button">Cerrar</button></div>
+  </div>
+</div>
+<div id="fichaModal" hidden style="position:fixed;inset:0;z-index:8900;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto">
+  <div style="background:var(--surface);color:var(--ink);border-radius:14px;padding:20px;max-width:860px;width:100%;display:grid;gap:12px;margin:auto">
+    <div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2 style="margin:0" id="fiNombre"></h2><div class="muted" id="fiSub"></div></div><button class="btn" type="button" id="fiClose">Cerrar</button></div>
+    <div id="fiResumen" class="row" style="gap:10px"></div>
+    <h3 style="margin:4px 0 0">Citaciones y asistencia del apoderado</h3>
+    <div class="tbl"><table><thead><tr><th>Período</th><th>Citación</th><th>Estado</th><th>Fecha de citación</th><th>Detalle</th></tr></thead><tbody id="fiCit"></tbody></table></div>
+    <h3 style="margin:4px 0 0">Atrasos</h3>
+    <div class="tbl scroll" style="max-height:340px"><table><thead><tr><th>Fecha</th><th>Hora</th><th class="num">Min.</th><th>Tipo</th><th>Situación</th></tr></thead><tbody id="fiAtr"></tbody></table></div>
   </div>
 </div>
 <div id="toast" class="toast" hidden></div>
@@ -544,7 +559,7 @@ async function doRegister(al, isNew){
 
 function showInfo(al, line){ const r=$("#stResult"); r.innerHTML=`<div class="result ok"><div>Sin atraso</div><div class="who">${esc(al.nombre)}</div>${al.curso?`<div class="meta">${esc(al.curso)}</div>`:""}<div class="meta">${esc(line)}</div></div>${S.voucher?voucherBtns():`<button class="btn" id="resOk" style="justify-self:center">Siguiente alumno</button>`}`; r.style.display="grid"; r.style.gap="12px"; showStage("result"); $("#resOk").addEventListener("click",resetKiosk); $("#resOk").focus(); clearTimeout(S.resetT); wireVoucher(true); }
 function cntHTML(nMes,nAnio){ if(nMes==null) return ""; const u=umbral(), per={mes:"del mes",semestre:"del semestre",anio:"del año"}[S.cfg.periodo||"mes"];
-  return `<div class="count">${nMes}° atraso sin justificar ${per}${S.cfg.periodo==="anio"?"":` · ${nAnio} en el año`}</div>${nMes>=u?`<div class="citalert">Alumno con ${nMes} atrasos sin justificar<br>Citar apoderado</div>`:""}`; }
+  return `<div class="count">${nMes}° atraso sin justificar ${per}${S.cfg.periodo==="anio"?"":` · ${nAnio} en el año`}</div>${nMes>=u?(nMes%u===0?`<div class="citalert">Alumno con ${nMes} atrasos sin justificar<br>Citar apoderado</div>`:`<div class="citalert">Este es el ${nMes}° atraso sin justificar<br>y el apoderado no ha venido a justificar</div><button type="button" class="btn primary" id="resCarta" style="margin-top:8px">Imprimir carta al apoderado (${nMes}° atraso)</button>`):""}`; }
 function showResult(kind, al, line, nMes, nAnio, isNew){
   const r=$("#stResult");
   const cnt = nMes!=null ? `<div id="resCnt">${cntHTML(nMes,nAnio)}</div>` : "";
@@ -645,16 +660,35 @@ $("#exportBtn").addEventListener("click", async ()=>{ const rows=filtered(); if(
 
 /* ---------- alumnos ---------- */
 $("#aTexto").addEventListener("input",renderAlumnos);
-function renderAlumnos(){ if($("#tab-alumnos").hidden) return; const t=$("#aTexto").value.trim().toLowerCase(), tc=cleanRut(t); const cy=countsYear();
+function renderAlumnos(){ if($("#tab-alumnos").hidden) return; const t=$("#aTexto").value.trim().toLowerCase(), tc=cleanRut(t); const cy=countsYear(), nAs=new Map(); for(const c of S.cit.values()) if(c.estado==="asistio"&&c.rut) nAs.set(c.rut,(nAs.get(c.rut)||0)+1);
   const list=[...S.alumnos.values()].filter(a=>!t || a.nombre.toLowerCase().includes(t) || a.curso.toLowerCase().includes(t) || (tc.length>2 && a.rut.replace("-","").includes(tc))).sort((a,b)=>a.curso.localeCompare(b.curso,"es",{numeric:true})||a.nombre.localeCompare(b.nombre,"es"));
   $("#alCount").textContent = `${S.alumnos.size} alumnos en ${S.cursos.size} cursos`;
-  $("#alBody").innerHTML = list.length ? list.slice(0,1500).map(a=>{ const n=cy.get(a.rut)||0; return `<tr data-rut="${esc(a.rut)}"><td>${esc(fmtRut(a.rut))}</td><td>${esc(a.nombre)}</td><td>${esc(a.curso)}</td><td class="num">${n?`<span class="pill ${n>=5?"b":n>=3?"w":"o"}">${n}</span>`:"0"}</td><td><button class="btn sm" data-edit>Editar</button> <button class="btn sm danger" data-del>Eliminar</button></td></tr>`; }).join("")
+  $("#alBody").innerHTML = list.length ? list.slice(0,1500).map(a=>{ const n=cy.get(a.rut)||0; return `<tr data-rut="${esc(a.rut)}"><td>${esc(fmtRut(a.rut))}</td><td>${esc(a.nombre)}${nAs.get(a.rut)?` <span class="pill o" title="El apoderado ya asistió a justificar atrasos anteriores">Apoderado asistió${nAs.get(a.rut)>1?` ×${nAs.get(a.rut)}`:""}</span>`:""}</td><td>${esc(a.curso)}</td><td class="num">${n?`<span class="pill ${n>=5?"b":n>=3?"w":"o"}">${n}</span>`:"0"}</td><td><button class="btn sm" data-ficha>Historial</button> <button class="btn sm" data-edit>Editar</button> <button class="btn sm danger" data-del>Eliminar</button></td></tr>`; }).join("")
     : `<tr><td colspan="5" class="empty">${S.alumnos.size?"Ningún alumno coincide con la búsqueda.":"Aún no hay alumnos. Carga la nómina desde un Excel o agrégalos uno a uno; también se agregan solos cuando un alumno nuevo registra su atraso."}</td></tr>`; }
 $("#alBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-rut]"); if(!tr) return; const a=S.alumnos.get(tr.dataset.rut); if(!a) return;
+  if(e.target.closest("[data-ficha]")){ openFicha(a); return; }
   if(e.target.closest("[data-edit]")){ tr.innerHTML=`<td>${esc(fmtRut(a.rut))}</td><td><input id="edN" value="${esc(a.nombre)}" style="width:100%;padding:4px 6px"></td><td><input id="edC" list="cursosList" value="${esc(a.curso)}" style="width:120px;padding:4px 6px"></td><td></td><td><button class="btn sm primary" data-save>Guardar</button> <button class="btn sm" data-cancel>Cancelar</button></td>`; return; }
   if(e.target.closest("[data-cancel]")){ renderAlumnos(); return; }
   if(e.target.closest("[data-save]")){ const n=titleName(tr.querySelector("#edN").value), c=normCurso(tr.querySelector("#edC").value); if(!n||!c) return; try{ const antes={nombre:a.nombre,curso:a.curso}; await upsertAlumno(a.rut,n,c); if(antes.nombre!==n||antes.curso!==c) logHist({cat:"Alumnos",tipo:"alumno_editado",rut:a.rut,nombre:n,curso:c,ref:{rut:a.rut},antes,desc:`Alumno editado: ${antes.nombre} (${antes.curso}) → ${n} (${c})`}); toast("Alumno actualizado"); }catch(err){ toast(dbErr(err)); } return; }
   const d=e.target.closest("[data-del]"); if(d){ if(!d.dataset.confirm){ d.dataset.confirm="1"; d.textContent="¿Confirmar?"; return; } try{ await removeFromCurso(a.slug,[a.rut]); logHist({cat:"Alumnos",tipo:"alumno_eliminado",rut:a.rut,nombre:a.nombre,curso:a.curso,ref:{rut:a.rut},antes:{nombre:a.nombre,curso:a.curso},desc:`Alumno eliminado de la base: ${a.nombre} (${a.curso})`}); toast("Alumno eliminado"); }catch(err){ toast(dbErr(err)); } } });
+function openFicha(a){ const dm=f=>f?String(f).slice(0,10).split("-").reverse().join("-"):"", R=resetsCit().get(a.rut)||[];
+  const cits=[...S.cit.entries()].filter(([,c])=>c.rut===a.rut).map(([id,c])=>({id,...c})).sort((x,y)=>String(y.periodo).localeCompare(String(x.periodo))||(y.tramo||0)-(x.tramo||0));
+  const asis=cits.filter(c=>c.estado==="asistio").sort((x,y)=>String(x.cerrada).localeCompare(String(y.cerrada)));
+  const ents=allEntries().filter(e=>e.rut===a.rut).sort((x,y)=>String(y.ts).localeCompare(String(x.ts)));
+  const vigentes=cuentaEntries().filter(e=>e.rut===a.rut).length;
+  $("#fiNombre").textContent=a.nombre; $("#fiSub").textContent=`${a.curso} · ${fmtRut(a.rut)}`;
+  $("#fiResumen").innerHTML=[[vigentes,"Atrasos sin justificar vigentes"],[asis.length,"Veces que el apoderado asistió a justificar"],[ents.length,"Atrasos registrados en total"]].map(([v,l])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+  $("#fiCit").innerHTML=cits.length?cits.map(c=>{ const [lbl,cls]=EST[c.estado||"pend"]||EST.pend, as_=c.asistencia; const det=c.estado==="asistio"?`Asistió el ${esc(dm(as_?.fecha||c.cerrada))}${as_?.apoderado?` · ${esc(as_.apoderado)}`:""}. Los atrasos anteriores quedaron cubiertos y el conteo volvió a 0.${as_?.obs?` ${esc(as_.obs)}`:""}`:c.estado==="no_asistio"?`No asistió${c.obs?`: ${esc(c.obs)}`:""}`:"Esperando al apoderado"; return `<tr><td>${esc(periodoLabel(c.periodo||""))}</td><td>${c.tramo||1}ª (${(c.tramo||1)*umbral()} atrasos)</td><td><span class="pill ${cls}">${lbl}</span></td><td>${esc(dm(c.fechaCit))} ${esc(c.horaCit||"")}</td><td>${det}</td></tr>`; }).join(""):`<tr><td colspan="5" class="empty">Sin citaciones.</td></tr>`;
+  $("#fiAtr").innerHTML=ents.length?ents.map(e=>{ let st; if(e.justificado) st=`<span class="pill o">Justificado</span>${e.justificadoPor?` por ${esc(e.justificadoPor)}`:""}`; else { const c=asis.find(x=>String(x.cerrada)>=String(e.ts||"")); st=c?`Cubierto: el apoderado asistió el ${esc(dm(c.asistencia?.fecha||c.cerrada))}`:`<span class="pill w">Cuenta</span>`; } return `<tr><td>${esc(dm(e.fecha))}</td><td>${esc(String(e.hora||"").slice(0,5))}</td><td class="num">${e.min??""}</td><td>${e.tipo==="clase"?`A clase · B${esc(parLbl(e.bloque))}`:"Llegada"}</td><td>${st}</td></tr>`; }).join(""):`<tr><td colspan="5" class="empty">Sin atrasos.</td></tr>`;
+  const m=$("#fichaModal"); m.hidden=false; m.style.display="flex"; }
+function closeFicha(){ const m=$("#fichaModal"); m.style.display="none"; m.hidden=true; }
+$("#fiClose").addEventListener("click",closeFicha); $("#fichaModal").addEventListener("click",e=>{ if(e.target.id==="fichaModal") closeFicha(); });
+async function tstPrev(rut,fn){ const out=[]; const d=new Date(); let k=0; while(out.length<3 && k++<20){ d.setDate(d.getDate()-1); if(esDiaHabil(d)) out.push(new Date(d)); } return out; }
+$("#tstCrear").addEventListener("click", async ()=>{ const rut=normRut($("#tstRut").value), al=rut&&S.alumnos.get(rut); if(!al){ toast("RUT no encontrado en la base de alumnos"); return; } const b=$("#tstCrear"); b.disabled=true;
+  try{ const ds=await tstPrev(); for(const [i,d] of ds.entries()){ d.setHours(8,30+i,0,0); const f=dateKey(d), id="prueba"+d.getTime().toString(36), entry={rut:al.rut,nombre:al.nombre,curso:al.curso,hora:`08:${pad2(30+i)}:00`,min:20+i,horaIngreso:"08:10",ts:d.toISOString(),prueba:true}; const ref=S.db.doc("atrasos/"+f), sn=await ref.get(); if(sn.exists) await writeRetry(()=>ref.update({entries:{[id]:entry}})); else await writeRetry(()=>ref.set({fecha:f,entries:{[id]:entry}})); }
+    toast("Listo: el próximo ingreso de este RUT será su 4° atraso"); }catch(err){ toast(dbErr(err)); } finally{ b.disabled=false; } });
+$("#tstBorrar").addEventListener("click", async ()=>{ const b=$("#tstBorrar"); if(!b.dataset.confirm){ b.dataset.confirm="1"; b.textContent="¿Confirmar borrado?"; setTimeout(()=>{ delete b.dataset.confirm; b.textContent="Borrar atrasos de prueba"; },4000); return; } delete b.dataset.confirm; b.textContent="Borrar atrasos de prueba"; b.disabled=true;
+  try{ let n=0; for(const [f,day] of S.dias){ for(const [id,e] of Object.entries(day.entries||{})){ if(e.prueba&&!e.anulado){ await writeRetry(()=>S.db.doc("atrasos/"+f).update({entries:{[id]:{anulado:true}}})); n++; } } } toast(n?`${n} atrasos de prueba borrados`:"No hay atrasos de prueba"); }catch(err){ toast(dbErr(err)); } finally{ b.disabled=false; } });
 $("#addForm").addEventListener("submit", async e=>{ e.preventDefault(); const rut=normRut($("#addRut").value); if(!rut){ toast("RUT inválido"); return; } try{ const nom=titleName($("#addNombre").value), cur=normCurso($("#addCurso").value); await upsertAlumno(rut,nom,$("#addCurso").value); logHist({cat:"Alumnos",tipo:"alumno_agregado",rut,nombre:nom,curso:cur,desc:`Alumno agregado o actualizado: ${nom} (${cur})`}); e.target.reset(); toast("Alumno guardado"); }catch(err){ toast(dbErr(err)); } });
 
 /* ---------- Excel import ---------- */
@@ -759,8 +793,9 @@ function alertas(){ const u=umbral(), g=new Map();
   for(const e of allEntries().filter(x=>!x.justificado)){ const pk=periodoKey(e.fecha), k=e.rut+"|"+pk; if(!g.has(k)) g.set(k,{rut:e.rut,periodo:pk,list:[]}); g.get(k).list.push(e); }
   const R=resetsCit(), out=[]; for(const a of g.values()){ a.list.sort((x,y)=>x.ts.localeCompare(y.ts)); const al=S.alumnos.get(a.rut)||a.list[a.list.length-1], rs=R.get(a.rut)||[], ciclos=new Map();
     for(const e of a.list){ const c=rs.filter(x=>x<(e.ts||"")).length; if(!ciclos.has(c)) ciclos.set(c,[]); ciclos.get(c).push(e); }
-    let tg=0; for(const [,L] of [...ciclos].sort((x,y)=>x[0]-y[0])){ for(let t=1;t<=Math.floor(L.length/u);t++){ tg++; const id=`${a.rut}_${a.periodo}_${tg}`; out.push({id, rut:a.rut, nombre:al.nombre, curso:al.curso, periodo:a.periodo, tramo:tg, tramoC:t, n:L.length, atrasos:L.slice(0,t*u), cit:S.cit.get(id)}); } } }
+    let tg=0; for(const [,L] of [...ciclos].sort((x,y)=>x[0]-y[0])){ for(let t=1;t<=Math.floor(L.length/u);t++){ tg++; const id=`${a.rut}_${a.periodo}_${tg}`; out.push({id, rut:a.rut, nombre:al.nombre, curso:al.curso, periodo:a.periodo, tramo:tg, tramoC:t, n:L.length, atrasos:L.slice(0,t*u), todos:L, ultimo:t===Math.floor(L.length/u), cit:S.cit.get(id)}); } } }
   return out.sort((a,b)=>(b.atrasos.at(-1).ts).localeCompare(a.atrasos.at(-1).ts)); }
+function ultimaAlerta(rut,pk){ return alertas().filter(x=>x.rut===rut&&x.periodo===pk&&x.ultimo).sort((x,y)=>y.tramo-x.tramo)[0]; }
 function estadoDe(a){ return a.cit?.estado || "pend"; }
 function renderAlerts(){ const al=alertas(); const pend=al.filter(a=>estadoDe(a)==="pend"); const b=$("#citBadge"); b.textContent=pend.length; b.hidden=!pend.length;
   const bar=$("#alertBar"); bar.hidden=!pend.length; if(pend.length) $("#alertTxt").textContent = pend.length===1 ? `Alumno con ${umbral()} atrasos sin justificar: citar apoderado (${pend[0].nombre}, ${pend[0].curso})` : `${pend.length} alumnos con ${umbral()} o más atrasos sin justificar: citar apoderado`;
@@ -807,25 +842,28 @@ $("#citBody").addEventListener("click", async e=>{ const b=e.target.closest("[da
   }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo generar la carta"); } finally{ b.disabled=false; } });
 
 /* ---------- alerta al completar el tope de atrasos sin justificar ---------- */
-function showAlertModal(al, n, fecha){ const pk=periodoKey(fecha); S.alertCtx={id:`${al.rut}_${pk}_${n/umbral()}`};
-  $("#alertMsg").innerHTML=`<b>${esc(al.nombre)}</b> (${esc(al.curso)}) llegó a <b>${n} atrasos sin justificar</b> en ${esc(periodoLabel(pk))}.<br>Corresponde citar al apoderado.`;
+function showAlertModal(al, n, fecha, reit){ const pk=periodoKey(fecha); S.alertCtx=reit?{reit:true,rut:al.rut,pk}:{id:`${al.rut}_${pk}_${n/umbral()}`};
+  $("#alertMsg").innerHTML=reit?`<b>${esc(al.nombre)}</b> (${esc(al.curso)}) registra su <b>${n}° atraso sin justificar</b> en ${esc(periodoLabel(pk))} y el apoderado aún no ha venido a justificar.<br>Se imprimirá la carta indicando los ${n} atrasos.`:`<b>${esc(al.nombre)}</b> (${esc(al.curso)}) llegó a <b>${n} atrasos sin justificar</b> en ${esc(periodoLabel(pk))}.<br>Corresponde citar al apoderado.`;
+  const ult=reit&&ultimaAlerta(al.rut,pk); if(ult?.cit?.fechaCit&&ult.cit.fechaCit>=dateKey(new Date())){ $("#alertFc").value=ult.cit.fechaCit; $("#alertHc").value=ult.cit.horaCit||S.cfg.horaCit||"08:30"; const m=$("#alertModal"); m.hidden=false; m.style.display="flex"; return; }
   $("#alertFc").value=nextHabil(); $("#alertHc").value=S.cfg.horaCit||"08:30"; const m=$("#alertModal"); m.hidden=false; m.style.display="flex"; }
 function closeAlertModal(){ const m=$("#alertModal"); m.style.display="none"; m.hidden=true; }
 $("#alertClose").addEventListener("click",closeAlertModal);
-$("#alertPdf").addEventListener("click", async ()=>{ const b=$("#alertPdf"); const a=alertas().find(x=>x.id===S.alertCtx?.id);
+$("#stResult").addEventListener("click",e=>{ if(!e.target.closest("#resCarta")) return; const v=S.voucher; if(!v) return; const pk=periodoKey(v.fecha), al=S.alumnos.get(v.rut)||{rut:v.rut,nombre:v.nombre,curso:v.curso}, ult=ultimaAlerta(v.rut,pk); if(!ult){ toast("El registro aún se está actualizando. Intenta de nuevo en unos segundos."); return; } showAlertModal(al, ult.n, v.fecha, true); });
+$("#alertPdf").addEventListener("click", async ()=>{ const b=$("#alertPdf"); const a=S.alertCtx?.reit?ultimaAlerta(S.alertCtx.rut,S.alertCtx.pk):alertas().find(x=>x.id===S.alertCtx?.id);
   if(!a){ toast("El registro aún se está actualizando. Intenta de nuevo en unos segundos."); return; }
   const fc=$("#alertFc").value, hc=$("#alertHc").value; if(!fc||!hc){ toast("Indica fecha y hora de la citación"); return; }
   if(!S.dl){ toast("Este visor no permite descargar archivos"); return; } b.disabled=true;
   try{ const blob=await cartaPDF(a, fc, hc); const ape=a.nombre.split(" ").slice(0,2).join("_").normalize("NFD").replace(/[̀-ͯ]/g,"");
     await S.dl.save({filename:`Citacion_${ape}_${slug(a.curso)}.pdf`, data:blob});
     const est=a.cit?.estado&&a.cit.estado!=="pend"?a.cit.estado:"citado";
-    await writeRetry(()=>S.db.doc("citaciones/"+a.id).update({rut:a.rut,nombre:a.nombre,curso:a.curso,periodo:a.periodo,tramo:a.tramo,n:a.tramo*umbral(),estado:est,fechaCit:fc,horaCit:hc,generada:new Date().toISOString()}));
+    await writeRetry(()=>S.db.doc("citaciones/"+a.id).update({rut:a.rut,nombre:a.nombre,curso:a.curso,periodo:a.periodo,tramo:a.tramo,n:a.tramo*umbral(),estado:est,fechaCit:fc,horaCit:hc,generada:new Date().toISOString(),ultimaCartaN:(a.ultimo?a.todos.length:a.tramo*umbral())}));
     logCarta(a,estadoDe(a),est,fc,hc); toast("Citación generada"); closeAlertModal();
   }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo generar la citación"); } finally{ b.disabled=false; } });
 
 function firmante(curso){ const n=parseInt(String(curso),10); const alto=n>=3; return {nombre:(alto?S.cfg.firma34:S.cfg.firma12)||"Inspector(a) General", cargo:(alto?S.cfg.cargo34:S.cfg.cargo12)||"Inspector(a) General"}; }
 async function logoPng(){ return new Promise(res=>{ const i=new Image(); i.onload=()=>{ try{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); res({data:c.toDataURL("image/jpeg",0.92),w:c.width,h:c.height}); }catch(e){ res(null); } }; i.onerror=()=>res(null); i.src=S.cfg.logo||LOGO_DEF; }); }
 async function cartaPDF(a, fc, hc){
+  const REIT=!!(a.ultimo&&a.todos&&a.todos.length>a.atrasos.length), AT=REIT?a.todos:a.atrasos;
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"letter"}); const W=215.9, M=22, TW=W-2*M; let y=16;
   const lg=await logoPng(); let tx=M; if(lg){ const h=24, w=Math.min(32,h*lg.w/lg.h); doc.addImage(lg.data,"JPEG",M,y,w,h*(w/(h*lg.w/lg.h))); tx=M+w+6; }
   doc.setTextColor(23,50,92); doc.setFont("helvetica","bold"); doc.setFontSize(12.5); doc.text(doc.splitTextToSize((S.cfg.nombre||DEF_NAME).toUpperCase(), W-M-tx), tx, y+9);
@@ -836,10 +874,10 @@ async function cartaPDF(a, fc, hc){
   y+=6; doc.setFont("helvetica","normal"); doc.setFontSize(10.5); doc.text("Motivo: atrasos reiterados", W/2, y, {align:"center"});
   y+=12; doc.setFontSize(11); doc.text("Señor(a) Apoderado(a):", M, y); y+=5.5; doc.text("Presente", M, y); y+=9;
   const para=t=>{ const ls=doc.splitTextToSize(t,TW); doc.text(ls,M,y,{lineHeightFactor:1.45}); y+=ls.length*5.6+3; };
-  para(`Junto con saludarle, Inspectoría General informa que el(la) estudiante ${a.nombre.toUpperCase()}, RUN ${fmtRut(a.rut)}, del curso ${a.curso}, registra ${a.atrasos.length} atrasos sin justificar en ${periodoLabel(a.periodo)}, de acuerdo con el siguiente detalle:`);
+  para(`Junto con saludarle, Inspectoría General informa que el(la) estudiante ${a.nombre.toUpperCase()}, RUN ${fmtRut(a.rut)}, del curso ${a.curso}, registra ${AT.length} atrasos sin justificar en ${periodoLabel(a.periodo)}${REIT?`, por lo que esta citación se reitera al no haber asistido el apoderado a justificar los atrasos anteriores`:""}, de acuerdo con el siguiente detalle:`);
   const cols=[["N°",12],["Fecha",48],["Hora de llegada",38],["Hora de ingreso",38],["Minutos",25]]; const tw=cols.reduce((s,c)=>s+c[1],0); let x0=M+(TW-tw)/2;
   doc.setFillColor(238,242,247); doc.rect(x0,y,tw,7,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(9.5); let xx=x0; cols.forEach(([t,w])=>{ doc.text(t,xx+2,y+4.8); xx+=w; }); y+=7; doc.setFont("helvetica","normal");
-  a.atrasos.forEach((e,i)=>{ const d=new Date(e.fecha+"T12:00:00"); const vals=[String(i+1), `${DIAS[d.getDay()]} ${e.fecha.split("-").reverse().join("-")}`, e.hora.slice(0,5), e.horaIngreso||S.cfg.hora||"08:10", String(e.min??"")]; xx=x0; vals.forEach((v,j)=>{ doc.text(v,xx+2,y+4.8); xx+=cols[j][1]; }); doc.setDrawColor(213,221,232); doc.setLineWidth(0.2); doc.line(x0,y+7,x0+tw,y+7); y+=7; if(y>250){ doc.addPage(); y=20; } });
+  AT.forEach((e,i)=>{ const d=new Date(e.fecha+"T12:00:00"); const vals=[String(i+1), `${DIAS[d.getDay()]} ${e.fecha.split("-").reverse().join("-")}`, e.hora.slice(0,5), e.horaIngreso||S.cfg.hora||"08:10", String(e.min??"")]; xx=x0; vals.forEach((v,j)=>{ doc.text(v,xx+2,y+4.8); xx+=cols[j][1]; }); doc.setDrawColor(213,221,232); doc.setLineWidth(0.2); doc.line(x0,y+7,x0+tw,y+7); y+=7; if(y>250){ doc.addPage(); y=20; } });
   y+=7; doc.setFontSize(11); const fd=new Date(fc+"T12:00:00"); const fcl=`${["domingo","lunes","martes","miércoles","jueves","viernes","sábado"][fd.getDay()]} ${fechaLarga(fd)}`;
   para(`De acuerdo con el Reglamento Interno del establecimiento, se le cita a presentarse en Inspectoría General el día ${fcl}, a las ${hc} horas, para tomar conocimiento de esta situación y acordar medidas que favorezcan la puntualidad del estudiante.`);
   para(`Se solicita asistir puntualmente y presentar esta citación. Si no puede asistir, comuníquese con Inspectoría General para acordar una nueva fecha.`);
@@ -1064,7 +1102,7 @@ async function boot(){
   db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); renderResumen(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
   subscribeAtrasos();
   db.collection("autorizaciones").onSnapshot(snap=>{ S.aut.clear(); snap.docs.forEach(d=>S.aut.set(d.id,d.data())); renderAut(); }, ()=>{});
-  db.collection("citaciones").onSnapshot(snap=>{ S.cit.clear(); snap.docs.forEach(d=>S.cit.set(d.id,d.data())); renderAlerts(); renderResumen(); }, ()=>{});
+  db.collection("citaciones").onSnapshot(snap=>{ S.cit.clear(); snap.docs.forEach(d=>S.cit.set(d.id,d.data())); renderAlerts(); renderResumen(); renderAlumnos(); }, ()=>{});
 }
 boot();
 })();
