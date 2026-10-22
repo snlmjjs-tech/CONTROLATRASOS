@@ -520,8 +520,8 @@ function resetKiosk(){ clearTimeout(S.resetT); S.pendingRut=null; S.pendingTipo=
 $("#rutForm").addEventListener("submit", async e=>{ e.preventDefault(); if(!S.db){ setHint("Sin conexión a la base de datos.",true); return; }
   const rut=normRut(rutInput.value); if(!rut){ setHint("RUT inválido. Revisa el número y el dígito verificador.",true); return; }
   const al=S.alumnos.get(rut); const now=new Date();
-  if(!esDiaHabil(now)){ setHint("Hoy no es día de clases: no se registran atrasos.",true); return; }
-  if(minsLate(now,rut)<=0){ const au=autorizacionVigente(rut,now); S.voucher=null; if(au && al){ const hh=`${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`; setVoucher(al,{hora:hh,ts:now.toISOString()},{tipo:"autorizado",horaAut:au.hora,motivo:au.motivo||""}); } showInfo(al||{rut,nombre:"RUT "+fmtRut(rut),curso:""}, au ? `Ingreso autorizado por Inspectoría hasta las ${au.hora}${au.motivo?` (${au.motivo})`:""}. No se registra atraso.` : `Llegaste a tiempo (ingreso hasta las ${S.cfg.hora}). No se registra atraso.`); return; }
+  if(rut!==RUT_PRUEBA && !esDiaHabil(now)){ setHint("Hoy no es día de clases: no se registran atrasos.",true); return; }
+  if(rut!==RUT_PRUEBA && minsLate(now,rut)<=0){ const au=autorizacionVigente(rut,now); S.voucher=null; if(au && al){ const hh=`${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`; setVoucher(al,{hora:hh,ts:now.toISOString()},{tipo:"autorizado",horaAut:au.hora,motivo:au.motivo||""}); } showInfo(al||{rut,nombre:"RUT "+fmtRut(rut),curso:""}, au ? `Ingreso autorizado por Inspectoría hasta las ${au.hora}${au.motivo?` (${au.motivo})`:""}. No se registra atraso.` : `Llegaste a tiempo (ingreso hasta las ${S.cfg.hora}). No se registra atraso.`); return; }
   if(!al){ S.pendingRut=rut; $("#newRutLbl").textContent=fmtRut(rut); $("#newNombre").value=""; $("#newCurso").value=""; showStage("new"); $("#newNombre").focus(); return; }
   await doRegister(al); });
 
@@ -548,10 +548,11 @@ $("#btnClase").addEventListener("click", async ()=>{ if(!S.db){ setHint("Sin con
   if(!al){ S.pendingRut=rut; S.pendingTipo="clase"; $("#newRutLbl").textContent=fmtRut(rut); $("#newNombre").value=""; $("#newCurso").value=""; showStage("new"); $("#newNombre").focus(); return; }
   await doRegisterClase(al); });
 
+const RUT_PRUEBA="19340660-2"; /* RUT de pruebas: siempre registra un atraso nuevo, a cualquier hora y día */
 async function doRegister(al, isNew){
-  const hoy=S.dias.get(dateKey(new Date())); const prev=Object.values(hoy?.entries||{}).find(x=>x.rut===al.rut && !x.anulado && x.tipo!=="clase");
+  const hoy=S.dias.get(dateKey(new Date())); const prev=Object.values(hoy?.entries||{}).find(x=>x.rut===al.rut && !x.anulado && x.tipo!=="clase" && al.rut!==RUT_PRUEBA);
   if(prev){ const pid=Object.entries(hoy.entries).find(([k,x])=>x===prev)?.[0]; setVoucher(al,{...prev,id:pid,fecha:dateKey(new Date())},{tipo:"atraso"}); showResult("dup", al, `Ya registraste tu atraso hoy a las ${prev.hora.slice(0,5)}.`); return; }
-  try{ const en=await addAtraso(al); const d=new Date(); const mk=dateKey(d).slice(0,7);
+  try{ const en=await addAtraso(al, al.rut===RUT_PRUEBA?{min:Math.max(1,minsLate(new Date(),al.rut)),prueba:true}:undefined); const d=new Date(); const mk=dateKey(d).slice(0,7);
     const pk=periodoKey(dateKey(d)); const all=cuentaEntries().filter(x=>x.rut===al.rut); const has=all.some(x=>x.ts===en.ts)?0:1; const nPer=all.filter(x=>periodoKey(x.fecha)===pk).length + has; const nAnio=all.length + has;
     setVoucher(al,{...en,fecha:dateKey(d)},{tipo:"atraso",nPer:S.cfg.periodo==="mes"?nPer:null});
     showResult("ok", al, `Atraso registrado a las ${en.hora.slice(0,5)} · ${en.min} min${en.autorizado?` (horario autorizado ${en.autorizado})`:""}`, nPer, nAnio, isNew);
