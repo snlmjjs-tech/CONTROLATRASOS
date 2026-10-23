@@ -811,8 +811,10 @@ function alertas(){ const u=umbral(), g=new Map();
   for(const e of allEntries().filter(x=>!x.justificado)){ const pk=periodoKey(e.fecha), k=e.rut+"|"+pk; if(!g.has(k)) g.set(k,{rut:e.rut,periodo:pk,list:[]}); g.get(k).list.push(e); }
   const R=resetsCit(), out=[]; for(const a of g.values()){ a.list.sort((x,y)=>x.ts.localeCompare(y.ts)); const al=S.alumnos.get(a.rut)||a.list[a.list.length-1], rs=R.get(a.rut)||[], ciclos=new Map();
     for(const e of a.list){ const c=rs.filter(x=>x<(e.ts||"")).length; if(!ciclos.has(c)) ciclos.set(c,[]); ciclos.get(c).push(e); }
-    let tg=0; for(const [,L] of [...ciclos].sort((x,y)=>x[0]-y[0])){ for(let t=1;t<=Math.floor(L.length/u);t++){ tg++; const id=`${a.rut}_${a.periodo}_${tg}`; out.push({id, rut:a.rut, nombre:al.nombre, curso:al.curso, periodo:a.periodo, tramo:tg, tramoC:t, n:L.length, atrasos:L.slice(0,t*u), todos:L, ultimo:t===Math.floor(L.length/u), cit:S.cit.get(id)}); } } }
+    let tg=0; for(const [,L] of [...ciclos].sort((x,y)=>x[0]-y[0])){ for(let t=1;t<=Math.floor(L.length/u);t++){ tg++; const trig=L[t*u-1].ts||""; let id=`${a.rut}_${a.periodo}_${tg}`; while(citVieja(S.cit.get(id),trig)){ tg++; id=`${a.rut}_${a.periodo}_${tg}`; } out.push({id, rut:a.rut, nombre:al.nombre, curso:al.curso, periodo:a.periodo, tramo:tg, tramoC:t, n:L.length, atrasos:L.slice(0,t*u), todos:L, ultimo:t===Math.floor(L.length/u), cit:S.cit.get(id)}); } } }
   return out.sort((a,b)=>(b.atrasos.at(-1).ts).localeCompare(a.atrasos.at(-1).ts)); }
+/* una citación guardada con un registro anterior a este atraso pertenece a otro episodio (p. ej. sus atrasos se anularon): no se reutiliza */
+function citVieja(c,trig){ if(!c) return false; const st=[c.cerrada,c.cambiado,c.generada].filter(Boolean).sort().pop(); return !!st && !!trig && st<trig; }
 function ultimaAlerta(rut,pk){ return alertas().filter(x=>x.rut===rut&&x.periodo===pk&&x.ultimo).sort((x,y)=>y.tramo-x.tramo)[0]; }
 function estadoDe(a){ return a.cit?.estado || "pend"; }
 function renderAlerts(){ const al=alertas(); const pend=al.filter(a=>estadoDe(a)==="pend"); const b=$("#citBadge"); b.textContent=pend.length; b.hidden=!pend.length;
@@ -860,14 +862,14 @@ $("#citBody").addEventListener("click", async e=>{ const b=e.target.closest("[da
   }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo generar la carta"); } finally{ b.disabled=false; } });
 
 /* ---------- alerta al completar el tope de atrasos sin justificar ---------- */
-function showAlertModal(al, n, fecha, reit){ const pk=periodoKey(fecha); S.alertCtx=reit?{reit:true,rut:al.rut,pk}:{id:`${al.rut}_${pk}_${n/umbral()}`};
+function showAlertModal(al, n, fecha, reit){ const pk=periodoKey(fecha); S.alertCtx={reit:!!reit,rut:al.rut,pk,n};
   $("#alertMsg").innerHTML=reit?`<b>${esc(al.nombre)}</b> (${esc(al.curso)}) registra su <b>${n}° atraso sin justificar</b> en ${esc(periodoLabel(pk))} y el apoderado aún no ha venido a justificar.<br>Se imprimirá la carta indicando los ${n} atrasos.`:`<b>${esc(al.nombre)}</b> (${esc(al.curso)}) llegó a <b>${n} atrasos sin justificar</b> en ${esc(periodoLabel(pk))}.<br>Corresponde citar al apoderado.`;
   const ult=reit&&ultimaAlerta(al.rut,pk); if(ult?.cit?.fechaCit&&ult.cit.fechaCit>=dateKey(new Date())){ $("#alertFc").value=ult.cit.fechaCit; $("#alertHc").value=ult.cit.horaCit||S.cfg.horaCit||"08:30"; const m=$("#alertModal"); m.hidden=false; m.style.display="flex"; return; }
   $("#alertFc").value=nextHabil(); $("#alertHc").value=S.cfg.horaCit||"08:30"; const m=$("#alertModal"); m.hidden=false; m.style.display="flex"; }
 function closeAlertModal(){ const m=$("#alertModal"); m.style.display="none"; m.hidden=true; }
 $("#alertClose").addEventListener("click",closeAlertModal);
 $("#stResult").addEventListener("click",e=>{ if(!e.target.closest("#resCarta")) return; const v=S.voucher; if(!v) return; const pk=periodoKey(v.fecha), al=S.alumnos.get(v.rut)||{rut:v.rut,nombre:v.nombre,curso:v.curso}, ult=ultimaAlerta(v.rut,pk); if(!ult){ toast("El registro aún se está actualizando. Intenta de nuevo en unos segundos."); return; } showAlertModal(al, ult.n, v.fecha, true); });
-$("#alertPdf").addEventListener("click", async ()=>{ const b=$("#alertPdf"); const a=S.alertCtx?.reit?ultimaAlerta(S.alertCtx.rut,S.alertCtx.pk):alertas().find(x=>x.id===S.alertCtx?.id);
+$("#alertPdf").addEventListener("click", async ()=>{ const b=$("#alertPdf"); const cx=S.alertCtx||{}, ua=ultimaAlerta(cx.rut,cx.pk), a=ua&&(cx.reit?ua.n>=cx.n:ua.tramoC*umbral()===cx.n)?ua:null;
   if(!a){ toast("El registro aún se está actualizando. Intenta de nuevo en unos segundos."); return; }
   const fc=$("#alertFc").value, hc=$("#alertHc").value; if(!fc||!hc){ toast("Indica fecha y hora de la citación"); return; }
   if(!S.dl){ toast("Este visor no permite descargar archivos"); return; } b.disabled=true;
