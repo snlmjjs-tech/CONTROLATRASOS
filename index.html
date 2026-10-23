@@ -109,6 +109,7 @@ body.kiosk-mode .wrap{max-width:1400px}
 .grid2{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start}
 .grid2 > *{min-width:0}
 .tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.hscroll{overflow-x:auto;overflow-y:hidden;height:16px;position:sticky;top:0;z-index:6;background:var(--surface);margin-top:12px}.hscroll>div{height:1px}.hscroll+.tbl{margin-top:2px!important}
 table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 th{background:var(--surface-2);font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);position:sticky;top:0}
@@ -466,6 +467,10 @@ function minsClase(d,b){ return Math.max(0,(d.getHours()*60+d.getMinutes())-hm(b
 function fillBloques(){ const c=$("#cfgBloques"); if(!c) return; c.innerHTML=`<span></span><span class="muted">Inicio</span><span class="muted">Fin</span>`+bloques10().map(b=>`<span style="font-weight:700">Bloque ${b.n}</span><input type="time" data-bi="${b.n}" value="${b.ini}"><input type="time" data-bf="${b.n}" value="${b.fin}">`).join(""); }
 function readBloques(){ return BLOQUES_DEF().map(b=>({n:b.n, ini:$(`#cfgBloques [data-bi="${b.n}"]`)?.value||b.ini, fin:$(`#cfgBloques [data-bf="${b.n}"]`)?.value||b.fin})); }
 
+/* ---------- barra de desplazamiento horizontal arriba de las tablas altas ---------- */
+(function topScroll(){ const mk=t=>{ const bar=document.createElement("div"), inner=document.createElement("div"); bar.className="hscroll"; bar.appendChild(inner); t.parentNode.insertBefore(bar,t); let lock=false; const sync=(a,b)=>a.addEventListener("scroll",()=>{ if(lock) return; lock=true; b.scrollLeft=a.scrollLeft; lock=false; });
+    sync(bar,t); sync(t,bar); const upd=()=>{ const w=t.scrollWidth, ov=w>t.clientWidth+1; bar.style.display=ov?"":"none"; inner.style.width=w+"px"; }; upd(); if(window.ResizeObserver){ const ro=new ResizeObserver(upd); ro.observe(t); const tb=t.querySelector("table"); if(tb) ro.observe(tb); } window.addEventListener("resize",upd); };
+  document.querySelectorAll(".tbl:not(.scroll)").forEach(mk); })();
 /* ---------- clock ---------- */
 const fmtDate = new Intl.DateTimeFormat("es-CL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 let lastDay = dateKey(new Date());
