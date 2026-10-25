@@ -430,11 +430,9 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
       <input id="loginEmail" type="text" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Usuario o correo" autocomplete="username" style="padding:10px;font:inherit">
       <input id="loginPass" type="password" placeholder="Contraseña" autocomplete="current-password" style="padding:10px;font:inherit">
     </div>
-    <input id="loginPin" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="PIN de 4 dígitos" autocomplete="off" hidden style="padding:10px;font:inherit;text-align:center;letter-spacing:6px">
     <div id="loginErr" style="color:#b00020;font-size:14px" role="alert"></div>
     <button class="btn" type="submit">Entrar</button>
     <button class="btn" type="button" id="loginReset" style="font-size:13px">Olvidé mi contraseña</button>
-    <button class="btn" type="button" id="loginModo" style="font-size:12px">Entrar con PIN (acceso antiguo)</button>
   </form>
 </div>
 <div id="alertModal" hidden style="position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px">
@@ -1169,19 +1167,16 @@ const FIREBASE_CONFIG = {
 // En Firestore update() reemplaza mapas completos, por eso update se traduce a set con merge.
 function wrapDoc(ref){ return { get:()=>ref.get(), set:d=>ref.set(d), update:d=>ref.set(d,{merge:true}), delete:()=>ref.delete(), onSnapshot:(a,b)=>ref.onSnapshot(a,b) }; }
 function wrapDb(fs){ return { doc:p=>wrapDoc(fs.doc(p)), collection:n=>fs.collection(n) }; }
-// Acceso: correo + contraseña (recomendado). El acceso con PIN de 4 dígitos es el sistema antiguo y se mantiene solo mientras existan esas cuentas
-// (correo = pin<PIN>@atrasos.cl, contraseña = <PIN>00); se elimina borrando esas cuentas en Firebase Authentication.
+// Acceso: usuario o correo + contraseña (cada persona tiene su cuenta). Ya no existe el acceso con PIN.
 const DOMINIO_USUARIOS="inspectoria-libro-digital.firebaseapp.com"; // si escribes solo el usuario (sin @), se completa con este dominio
 const conDominio=v=>{ v=String(v||"").trim(); return v && !v.includes("@") ? v+"@"+DOMINIO_USUARIOS : v; };
-function askLogin(auth){ return new Promise(res=>{ const box=$("#loginBox"), f=$("#loginForm"), err=m=>$("#loginErr").textContent=m; let fails=0, lock=0, nivel=0, pin=false;
-  const modo=p=>{ pin=p; $("#loginMail").hidden=p; $("#loginPin").hidden=!p; $("#loginReset").hidden=p; $("#loginModo").textContent=p?"Volver a correo y contraseña":"Entrar con PIN (acceso antiguo)"; $("#loginTitulo").textContent=p?"Ingresa tu PIN":"Inicia sesión"; err(""); (p?$("#loginPin"):$("#loginEmail")).focus(); };
-  box.hidden=false; box.style.display="flex"; $("#loginPin").value=""; $("#loginPass").value=""; modo(false);
-  $("#loginModo").onclick=()=>modo(!pin);
+function askLogin(auth){ return new Promise(res=>{ const box=$("#loginBox"), f=$("#loginForm"), err=m=>$("#loginErr").textContent=m; let fails=0, lock=0, nivel=0;
+  box.hidden=false; box.style.display="flex"; $("#loginPass").value=""; err(""); $("#loginEmail").focus();
   $("#loginReset").onclick=async()=>{ const em=conDominio($("#loginEmail").value); if(!em){ err("Escribe tu usuario o correo y vuelve a presionar «Olvidé mi contraseña»."); return; } try{ await auth.sendPasswordResetEmail(em); }catch(e){} err("Si el correo está registrado, te enviamos un enlace para crear una nueva contraseña."); };
   f.onsubmit=async e=>{ e.preventDefault(); if(Date.now()<lock){ err(`Demasiados intentos. Espera ${Math.ceil((lock-Date.now())/1000)} segundos.`); return; }
-    let em, pw; if(pin){ const p=$("#loginPin").value; if(!/^\d{4}$/.test(p)){ err("El PIN debe tener 4 dígitos."); return; } em=`pin${p}@atrasos.cl`; pw=p+"00"; } else { em=conDominio($("#loginEmail").value); pw=$("#loginPass").value; if(!em||!pw){ err("Escribe tu usuario (o correo) y tu contraseña."); return; } }
-    try{ await auth.signInWithEmailAndPassword(em, pw); $("#loginPass").value=""; $("#loginPin").value=""; box.style.display="none"; box.hidden=true; res(); }
-    catch(ex){ if(++fails>=5){ fails=0; lock=Date.now()+30000*Math.pow(2,Math.min(nivel++,5)); } err(ex?.code==="auth/network-request-failed"?"Sin conexión. Intenta de nuevo.":ex?.code==="auth/too-many-requests"?"Demasiados intentos. Espera unos minutos.":(pin?"PIN incorrecto.":"Correo o contraseña incorrectos.")); $("#loginPass").value=""; $("#loginPin").value=""; (pin?$("#loginPin"):$("#loginPass")).focus(); } }; }); }
+    const em=conDominio($("#loginEmail").value), pw=$("#loginPass").value; if(!em||!pw){ err("Escribe tu usuario (o correo) y tu contraseña."); return; }
+    try{ await auth.signInWithEmailAndPassword(em, pw); $("#loginPass").value=""; box.style.display="none"; box.hidden=true; res(); }
+    catch(ex){ if(++fails>=5){ fails=0; lock=Date.now()+30000*Math.pow(2,Math.min(nivel++,5)); } err(ex?.code==="auth/network-request-failed"?"Sin conexión. Intenta de nuevo.":ex?.code==="auth/too-many-requests"?"Demasiados intentos. Espera unos minutos.":"Usuario o contraseña incorrectos."); $("#loginPass").value=""; $("#loginPass").focus(); } }; }); }
 async function connectFirebase(){
   if(typeof firebase==="undefined"){ showBanner("No se pudo cargar Firebase. Revisa la conexión a internet."); return null; }
   if(FIREBASE_CONFIG.apiKey==="REEMPLAZAR"){ showBanner("Falta configurar Firebase: pega tu firebaseConfig en index.html."); return null; }
