@@ -976,7 +976,7 @@ $("#cfgLogo").addEventListener("change", e=>{ const f=e.target.files[0]; e.targe
   img.onerror=()=>toast("No se pudo leer la imagen"); img.src=url; });
 $("#cfgLogoDel").addEventListener("click",()=>saveCfg({logo:""}));
 $("#btnRespaldo").addEventListener("click", async ()=>{ const b=$("#btnRespaldo"); b.disabled=true; b.textContent="Preparando respaldo…";
-  try{ const out={generado:new Date().toISOString(),version:1,datos:{}}; for(const c of ["cursos","atrasos","citaciones","autorizaciones","historial"]){ const sn=await S.db.collection(c).get(); out.datos[c]={}; sn.docs.forEach(d=>{ out.datos[c][d.id]=d.data(); }); }
+  try{ const out={generado:new Date().toISOString(),version:1,datos:{}}; for(const c of ["cursos","atrasos","citaciones","autorizaciones","historial","usuarios"]){ out.datos[c]={}; try{ const sn=await S.db.collection(c).get(); sn.docs.forEach(d=>{ out.datos[c][d.id]=d.data(); }); }catch(e){ if(c!=="usuarios") throw e; } }
     const e=await S.db.doc("config/escuela").get(); out.datos.config={escuela:e.exists?e.data():null};
     await S.dl.save({filename:`respaldo_controlatrasos_${dateKey(new Date())}.json`, data:new Blob([JSON.stringify(out)],{type:"application/json"})}); logHist({cat:"Configuración",tipo:"respaldo",desc:"Respaldo completo descargado"}); toast("Respaldo descargado"); }
   catch(err){ toast(err?.code?dbErr(err):"No se pudo generar el respaldo"); } finally{ b.disabled=false; b.textContent="Descargar respaldo completo"; } });
