@@ -2,6 +2,8 @@
 <html lang="es" data-theme="light">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.google.com; frame-src https://*.firebaseapp.com https://*.google.com; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
@@ -9,8 +11,8 @@
 <title>Control de Atrasos</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="vendor/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"></script>
+<script src="vendor/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -161,7 +163,8 @@ tr.citform td{background:var(--surface-2);white-space:normal}
 .rs-card td,.rs-card th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;color:var(--ink)}
 .rs-presets{display:flex;gap:6px;flex-wrap:wrap}
 @media (max-width:860px){.rs-grid{grid-template-columns:1fr}}
-body.rol-director .alertbar,body.rol-director #citBadge{display:none!important}
+body.rol-director .alertbar,body.rol-director #citBadge,body.rol-porteria .alertbar,body.rol-porteria #citBadge{display:none!important}
+body.rol-porteria [data-anular],body.rol-porteria #exportBtn,body.rol-porteria #pdfBtn{display:none!important}
 /* citaciones: no asistió se mantiene en rojo / historial */
 tr.cit-no td{background:var(--bad-soft)}
 tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
@@ -389,13 +392,19 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
           <label class="btn">Subir insignia<input type="file" id="cfgLogo" accept="image/*" hidden></label>
           <button class="btn danger" type="button" id="cfgLogoDel">Quitar insignia</button>
         </div>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="cfgPrueba"> Modo de pruebas (activa el RUT de pruebas 19.340.660-2 y la herramienta de prueba; apágalo cuando termines)</label>
         <div><button class="btn primary" type="submit">Guardar configuración</button></div>
       </form>
-      <div class="panel" style="background:var(--surface-2);margin-top:16px;display:grid;gap:10px;max-width:560px">
+      <div class="panel" id="tstPanel" hidden style="background:var(--surface-2);margin-top:16px;display:grid;gap:10px;max-width:560px">
         <h3 style="margin:0">Herramienta de prueba</h3>
         <p class="muted" style="margin:0;font-size:13px">Crea 3 atrasos anteriores (en los últimos días hábiles) para un alumno, de modo que el próximo ingreso sea su 4° atraso. Quedan marcados como «prueba» y se pueden borrar después.</p>
         <div class="row"><label class="f" style="flex:1 1 200px">RUT del alumno<input id="tstRut" value="19.340.660-2" autocomplete="off"></label><button class="btn" type="button" id="tstCrear">Crear 3 atrasos de prueba</button><button class="btn danger" type="button" id="tstBorrar">Borrar atrasos de prueba</button></div>
         <div id="tstMsg" style="font-size:14px;font-weight:700"></div>
+      </div>
+      <div class="panel" style="background:var(--surface-2);margin-top:16px;display:grid;gap:8px;max-width:560px">
+        <h3 style="margin:0">Respaldo</h3>
+        <p class="muted" style="margin:0;font-size:13px">Descarga una copia de todos los datos (alumnos, atrasos, citaciones, historial). Contiene datos personales de menores: guárdala en un lugar privado y nunca la subas a GitHub ni la envíes por correo.</p>
+        <div><button class="btn" type="button" id="btnRespaldo">Descargar respaldo completo</button></div>
       </div>
       <p class="muted" style="font-size:13px;margin-top:14px">Los datos se guardan en línea y los ven todas las personas con acceso a esta página (inspectores, portería). El computador de ingreso debe tener la página abierta con una cuenta que tenga permiso de Colaborador o superior.</p>
     </div>
@@ -403,11 +412,17 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
 </div>
 <datalist id="cursosList"></datalist>
 <div id="loginBox" hidden style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center">
-  <form id="loginForm" style="background:#fff;color:#111;padding:24px;border-radius:12px;display:grid;gap:12px;min-width:min(320px,90vw)">
-    <strong>Ingresa tu PIN</strong>
-    <input id="loginPin" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="PIN de 4 dígitos" required autocomplete="off" style="padding:10px;font:inherit;text-align:center;letter-spacing:6px">
-    <div id="loginErr" style="color:#b00020;font-size:14px"></div>
+  <form id="loginForm" style="background:#fff;color:#111;padding:24px;border-radius:12px;display:grid;gap:12px;min-width:min(340px,90vw)">
+    <strong id="loginTitulo">Inicia sesión</strong>
+    <div id="loginMail" style="display:grid;gap:10px">
+      <input id="loginEmail" type="email" placeholder="Correo" autocomplete="username" style="padding:10px;font:inherit">
+      <input id="loginPass" type="password" placeholder="Contraseña" autocomplete="current-password" style="padding:10px;font:inherit">
+    </div>
+    <input id="loginPin" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="PIN de 4 dígitos" autocomplete="off" hidden style="padding:10px;font:inherit;text-align:center;letter-spacing:6px">
+    <div id="loginErr" style="color:#b00020;font-size:14px" role="alert"></div>
     <button class="btn" type="submit">Entrar</button>
+    <button class="btn" type="button" id="loginReset" style="font-size:13px">Olvidé mi contraseña</button>
+    <button class="btn" type="button" id="loginModo" style="font-size:12px">Entrar con PIN (acceso antiguo)</button>
   </form>
 </div>
 <div id="alertModal" hidden style="position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px">
@@ -451,7 +466,7 @@ function titleName(s){ return String(s??"").trim().replace(/\s+/g," ").toLowerCa
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-function showTab(t){ if(S.rol==="director") t="resumen"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="historial") renderHist(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
+function showTab(t){ if(!puedeTab(t)) t=rolEfectivo()==="director"?"resumen":"ingreso"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="historial") renderHist(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
 $("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.classList.contains("kiosk-mode"); document.body.classList.toggle("kiosk-mode",on); $("#kioskBtn").textContent = on ? "Salir de modo kiosco" : "Modo kiosco"; if(on){ try{ await document.documentElement.requestFullscreen?.(); }catch(e){} try{ await navigator.wakeLock?.request("screen"); }catch(e){} } else { try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch(e){} } $("#rutInput").focus(); });
 
 /* ---------- bloques de clases (atraso a clase) ---------- */
@@ -482,8 +497,10 @@ setInterval(tick,1000); tick();
 
 /* ---------- branding ---------- */
 const LOGO_DEF="logo.png"; // insignia por defecto; si se sube otra en Configuración, esa tiene prioridad
-function crestHTML(){ return `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="Insignia del establecimiento">`; }
-function renderBrand(){ $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = `<img src="${esc(S.cfg.logo||LOGO_DEF)}" alt="" style="width:34px;height:34px;object-fit:contain">`; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; fillBloques(); } tick(); }
+function logoSrc(){ const l=S.cfg.logo; return (typeof l==="string" && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(l))?l:LOGO_DEF; }
+function crestHTML(){ return `<img src="${esc(logoSrc())}" alt="Insignia del establecimiento">`; }
+function renderTools(){ const p=$("#tstPanel"); if(p) p.hidden=!(S.cfg.modoPrueba===true && (S.rol==="admin"||S.rol==="legacy")); }
+function renderBrand(){ renderTools(); $("#cfgPrueba").checked=!!S.cfg.modoPrueba; $("#crest").innerHTML=crestHTML(); $("#cfgCrest").innerHTML=crestHTML(); $("#schoolName").textContent=S.cfg.nombre||DEF_NAME; $("#brandName").textContent=S.cfg.nombre||DEF_NAME; $("#brandLogo").innerHTML = `<img src="${esc(logoSrc())}" alt="" style="width:34px;height:34px;object-fit:contain">`; if(document.activeElement?.closest?.("#cfgForm")==null){ $("#cfgNombre").value=S.cfg.nombre||DEF_NAME; $("#cfgHora").value=S.cfg.hora||"08:10"; $("#cfgUmbral").value=S.cfg.umbral||3; $("#cfgPeriodo").value=S.cfg.periodo||"mes"; $("#cfgFirma12").value=S.cfg.firma12||""; $("#cfgCargo12").value=S.cfg.cargo12||""; $("#cfgFirma34").value=S.cfg.firma34||""; $("#cfgCargo34").value=S.cfg.cargo34||""; $("#cfgCiudad").value=S.cfg.ciudad||""; $("#cfgHoraCit").value=S.cfg.horaCit||"08:30"; $("#cfgPapel").value=String(S.cfg.papel||58); $("#cfgVAuto").checked=S.cfg.voucherAuto!==false; fillBloques(); } tick(); }
 renderBrand();
 
 /* ---------- data model ----------
@@ -525,8 +542,8 @@ function resetKiosk(){ clearTimeout(S.resetT); S.pendingRut=null; S.pendingTipo=
 $("#rutForm").addEventListener("submit", async e=>{ e.preventDefault(); if(!S.db){ setHint("Sin conexión a la base de datos.",true); return; }
   const rut=normRut(rutInput.value); if(!rut){ setHint("RUT inválido. Revisa el número y el dígito verificador.",true); return; }
   const al=S.alumnos.get(rut); const now=new Date();
-  if(rut!==RUT_PRUEBA && !esDiaHabil(now)){ setHint("Hoy no es día de clases: no se registran atrasos.",true); return; }
-  if(rut!==RUT_PRUEBA && minsLate(now,rut)<=0){ const au=autorizacionVigente(rut,now); S.voucher=null; if(au && al){ const hh=`${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`; setVoucher(al,{hora:hh,ts:now.toISOString()},{tipo:"autorizado",horaAut:au.hora,motivo:au.motivo||""}); } showInfo(al||{rut,nombre:"RUT "+fmtRut(rut),curso:""}, au ? `Ingreso autorizado por Inspectoría hasta las ${au.hora}${au.motivo?` (${au.motivo})`:""}. No se registra atraso.` : `Llegaste a tiempo (ingreso hasta las ${S.cfg.hora}). No se registra atraso.`); return; }
+  if(!esPrueba(rut) && !esDiaHabil(now)){ setHint("Hoy no es día de clases: no se registran atrasos.",true); return; }
+  if(!esPrueba(rut) && minsLate(now,rut)<=0){ const au=autorizacionVigente(rut,now); S.voucher=null; if(au && al){ const hh=`${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`; setVoucher(al,{hora:hh,ts:now.toISOString()},{tipo:"autorizado",horaAut:au.hora,motivo:au.motivo||""}); } showInfo(al||{rut,nombre:"RUT "+fmtRut(rut),curso:""}, au ? `Ingreso autorizado por Inspectoría hasta las ${au.hora}${au.motivo?` (${au.motivo})`:""}. No se registra atraso.` : `Llegaste a tiempo (ingreso hasta las ${S.cfg.hora}). No se registra atraso.`); return; }
   if(!al){ S.pendingRut=rut; $("#newRutLbl").textContent=fmtRut(rut); $("#newNombre").value=""; $("#newCurso").value=""; showStage("new"); $("#newNombre").focus(); return; }
   await doRegister(al); });
 
@@ -553,11 +570,12 @@ $("#btnClase").addEventListener("click", async ()=>{ if(!S.db){ setHint("Sin con
   if(!al){ S.pendingRut=rut; S.pendingTipo="clase"; $("#newRutLbl").textContent=fmtRut(rut); $("#newNombre").value=""; $("#newCurso").value=""; showStage("new"); $("#newNombre").focus(); return; }
   await doRegisterClase(al); });
 
-const RUT_PRUEBA="19340660-2"; /* RUT de pruebas: siempre registra un atraso nuevo, a cualquier hora y día */
+const RUT_PRUEBA="19340660-2"; /* RUT de pruebas: solo funciona con «Modo de pruebas» activado en Configuración (por defecto apagado) */
+const esPrueba=rut=>S.cfg.modoPrueba===true && rut===RUT_PRUEBA;
 async function doRegister(al, isNew){
-  const hoy=S.dias.get(dateKey(new Date())); const prev=Object.values(hoy?.entries||{}).find(x=>x.rut===al.rut && !x.anulado && x.tipo!=="clase" && al.rut!==RUT_PRUEBA);
+  const hoy=S.dias.get(dateKey(new Date())); const prev=Object.values(hoy?.entries||{}).find(x=>x.rut===al.rut && !x.anulado && x.tipo!=="clase" && !esPrueba(al.rut));
   if(prev){ const pid=Object.entries(hoy.entries).find(([k,x])=>x===prev)?.[0]; setVoucher(al,{...prev,id:pid,fecha:dateKey(new Date())},{tipo:"atraso"}); showResult("dup", al, `Ya registraste tu atraso hoy a las ${prev.hora.slice(0,5)}.`); return; }
-  try{ const en=await addAtraso(al, al.rut===RUT_PRUEBA?{min:Math.max(1,minsLate(new Date(),al.rut)),prueba:true}:undefined); const d=new Date(); const mk=dateKey(d).slice(0,7);
+  try{ const en=await addAtraso(al, esPrueba(al.rut)?{min:Math.max(1,minsLate(new Date(),al.rut)),prueba:true}:undefined); const d=new Date(); const mk=dateKey(d).slice(0,7);
     const pk=periodoKey(dateKey(d)); const all=cuentaEntries().filter(x=>x.rut===al.rut); const has=all.some(x=>x.ts===en.ts)?0:1; const nPer=all.filter(x=>periodoKey(x.fecha)===pk).length + has; const nAnio=all.length + has;
     setVoucher(al,{...en,fecha:dateKey(d)},{tipo:"atraso",nPer:S.cfg.periodo==="mes"?nPer:null});
     showResult("ok", al, `Atraso registrado a las ${en.hora.slice(0,5)} · ${en.min} min${en.autorizado?` (horario autorizado ${en.autorizado})`:""}`, nPer, nAnio, isNew);
@@ -674,11 +692,10 @@ function renderAlumnos(){ if($("#tab-alumnos").hidden) return; const t=$("#aText
     : `<tr><td colspan="5" class="empty">${S.alumnos.size?"Ningún alumno coincide con la búsqueda.":"Aún no hay alumnos. Carga la nómina desde un Excel o agrégalos uno a uno; también se agregan solos cuando un alumno nuevo registra su atraso."}</td></tr>`; }
 $("#alBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-rut]"); if(!tr) return; const a=S.alumnos.get(tr.dataset.rut); if(!a) return;
   if(e.target.closest("[data-ficha]")){ openFicha(a); return; }
-  if(e.target.closest("[data-edit]")){ tr.innerHTML=`<td>${esc(fmtRut(a.rut))}</td><td><input id="edN" value="${esc(a.nombre)}" style="width:100%;padding:4px 6px"></td><td><input id="edC" list="cursosList" value="${esc(a.curso)}" style="width:120px;padding:4px 6px"></td><td class="num"><input id="edA" type="number" min="0" step="1" value="${countsYear().get(a.rut)||0}" title="Atrasos sin justificar vigentes. Cambiarlo requiere la clave." style="width:64px;padding:4px 6px;text-align:right"><br><input id="edK" type="password" inputmode="numeric" autocomplete="off" placeholder="Clave" title="Clave para modificar atrasos" style="width:64px;padding:4px 6px;margin-top:4px"></td><td><button class="btn sm primary" data-save>Guardar</button> <button class="btn sm" data-cancel>Cancelar</button></td>`; return; }
+  if(e.target.closest("[data-edit]")){ tr.innerHTML=`<td>${esc(fmtRut(a.rut))}</td><td><input id="edN" value="${esc(a.nombre)}" style="width:100%;padding:4px 6px"></td><td><input id="edC" list="cursosList" value="${esc(a.curso)}" style="width:120px;padding:4px 6px"></td><td class="num">${S.rol==="admin"?`<input id="edA" type="number" min="0" step="1" value="${countsYear().get(a.rut)||0}" title="Atrasos sin justificar vigentes. Solo el administrador puede cambiarlos." style="width:64px;padding:4px 6px;text-align:right">`:`${countsYear().get(a.rut)||0}`}</td><td><button class="btn sm primary" data-save>Guardar</button> <button class="btn sm" data-cancel>Cancelar</button></td>`; return; }
   if(e.target.closest("[data-cancel]")){ renderAlumnos(); return; }
-  if(e.target.closest("[data-save]")){ const n=titleName(tr.querySelector("#edN").value), c=normCurso(tr.querySelector("#edC").value); if(!n||!c) return; const act=countsYear().get(a.rut)||0, want=Number(tr.querySelector("#edA").value); if(!Number.isInteger(want)||want<0){ toast("Los atrasos deben ser un número entero, 0 o más"); return; } if(want!==act && tr.querySelector("#edK").value!==CLAVE_AJUSTE){ toast("Clave incorrecta: no se modificaron los atrasos"); return; } try{ if(want!==act) await ajustarAtrasos(a,act,want); const antes={nombre:a.nombre,curso:a.curso}; await upsertAlumno(a.rut,n,c); if(antes.nombre!==n||antes.curso!==c) logHist({cat:"Alumnos",tipo:"alumno_editado",rut:a.rut,nombre:n,curso:c,ref:{rut:a.rut},antes,desc:`Alumno editado: ${antes.nombre} (${antes.curso}) → ${n} (${c})`}); toast("Alumno actualizado"); }catch(err){ toast(dbErr(err)); } return; }
+  if(e.target.closest("[data-save]")){ const n=titleName(tr.querySelector("#edN").value), c=normCurso(tr.querySelector("#edC").value); if(!n||!c) return; const act=countsYear().get(a.rut)||0, inA=tr.querySelector("#edA"), want=inA?Number(inA.value):act; if(!Number.isInteger(want)||want<0){ toast("Los atrasos deben ser un número entero, 0 o más"); return; } if(want!==act && S.rol!=="admin"){ toast("Solo el administrador puede modificar los atrasos"); return; } try{ if(want!==act) await ajustarAtrasos(a,act,want); const antes={nombre:a.nombre,curso:a.curso}; await upsertAlumno(a.rut,n,c); if(antes.nombre!==n||antes.curso!==c) logHist({cat:"Alumnos",tipo:"alumno_editado",rut:a.rut,nombre:n,curso:c,ref:{rut:a.rut},antes,desc:`Alumno editado: ${antes.nombre} (${antes.curso}) → ${n} (${c})`}); toast("Alumno actualizado"); }catch(err){ toast(dbErr(err)); } return; }
   const d=e.target.closest("[data-del]"); if(d){ if(!d.dataset.confirm){ d.dataset.confirm="1"; d.textContent="¿Confirmar?"; return; } try{ await removeFromCurso(a.slug,[a.rut]); logHist({cat:"Alumnos",tipo:"alumno_eliminado",rut:a.rut,nombre:a.nombre,curso:a.curso,ref:{rut:a.rut},antes:{nombre:a.nombre,curso:a.curso},desc:`Alumno eliminado de la base: ${a.nombre} (${a.curso})`}); toast("Alumno eliminado"); }catch(err){ toast(dbErr(err)); } } });
-const CLAVE_AJUSTE="2179";
 async function ajustarAtrasos(a,act,want){ const por=new Map(), now=Date.now();
   if(want<act){ const lst=cuentaEntries().filter(e=>e.rut===a.rut).sort((x,y)=>String(y.ts).localeCompare(String(x.ts))).slice(0,act-want); for(const e of lst){ if(!por.has(e.fecha)) por.set(e.fecha,{}); por.get(e.fecha)[e.id]={anulado:true}; } }
   else { const f=dateKey(new Date(now)); por.set(f,{}); for(let i=0;i<want-act;i++){ const d=new Date(now+i), id="ajuste"+d.getTime().toString(36)+i; por.get(f)[id]={rut:a.rut,nombre:a.nombre,curso:a.curso,hora:`${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`,min:0,horaIngreso:S.cfg.hora||"08:10",ts:d.toISOString(),ajuste:true}; } }
@@ -881,7 +898,7 @@ $("#alertPdf").addEventListener("click", async ()=>{ const b=$("#alertPdf"); con
   }catch(err){ if(err?.code==="declined") toast("Descarga cancelada"); else toast(err?.code?dbErr(err):"No se pudo generar la citación"); } finally{ b.disabled=false; } });
 
 function firmante(curso){ const n=parseInt(String(curso),10); const alto=n>=3; return {nombre:(alto?S.cfg.firma34:S.cfg.firma12)||"Inspector(a) General", cargo:(alto?S.cfg.cargo34:S.cfg.cargo12)||"Inspector(a) General"}; }
-async function logoPng(){ return new Promise(res=>{ const i=new Image(); i.onload=()=>{ try{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); res({data:c.toDataURL("image/jpeg",0.92),w:c.width,h:c.height}); }catch(e){ res(null); } }; i.onerror=()=>res(null); i.src=S.cfg.logo||LOGO_DEF; }); }
+async function logoPng(){ return new Promise(res=>{ const i=new Image(); i.onload=()=>{ try{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); res({data:c.toDataURL("image/jpeg",0.92),w:c.width,h:c.height}); }catch(e){ res(null); } }; i.onerror=()=>res(null); i.src=logoSrc(); }); }
 async function cartaPDF(a, fc, hc){
   const REIT=!!(a.ultimo&&a.todos&&a.todos.length>a.atrasos.length), AT=REIT?a.todos:a.atrasos;
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"letter"}); const W=215.9, M=22, TW=W-2*M; let y=16;
@@ -912,7 +929,7 @@ async function cartaPDF(a, fc, hc){
   return doc.output("blob"); }
 
 /* ---------- boucher de ingreso (impresora térmica de rollo) ---------- */
-async function logoGris(){ return new Promise(res=>{ const i=new Image(); i.onload=()=>{ try{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); const im=x.getImageData(0,0,c.width,c.height), d=im.data; for(let k=0;k<d.length;k+=4){ const g=0.3*d[k]+0.59*d[k+1]+0.11*d[k+2]; d[k]=d[k+1]=d[k+2]=g; } x.putImageData(im,0,0); res({data:c.toDataURL("image/jpeg",0.9),w:c.width,h:c.height}); }catch(e){ res(null); } }; i.onerror=()=>res(null); i.src=S.cfg.logo||LOGO_DEF; }); }
+async function logoGris(){ return new Promise(res=>{ const i=new Image(); i.onload=()=>{ try{ const c=document.createElement("canvas"); c.width=i.naturalWidth; c.height=i.naturalHeight; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,c.width,c.height); x.drawImage(i,0,0); const im=x.getImageData(0,0,c.width,c.height), d=im.data; for(let k=0;k<d.length;k+=4){ const g=0.3*d[k]+0.59*d[k+1]+0.11*d[k+2]; d[k]=d[k+1]=d[k+2]=g; } x.putImageData(im,0,0); res({data:c.toDataURL("image/jpeg",0.9),w:c.width,h:c.height}); }catch(e){ res(null); } }; i.onerror=()=>res(null); i.src=logoSrc(); }); }
 async function voucherPDF(v){
   const {jsPDF}=window.jspdf; const W=Number(S.cfg.papel)===80?80:58, M=W===80?5:3.5, CW=W-2*M, big=W===80?1.15:1; const lg=await logoGris();
   const draw=doc=>{ let y=4; const C=W/2;
@@ -958,8 +975,13 @@ $("#cfgLogo").addEventListener("change", e=>{ const f=e.target.files[0]; e.targe
     let data=c.toDataURL("image/png"); if(data.length>180000) data=c.toDataURL("image/webp",0.85); await saveCfg({logo:data}); };
   img.onerror=()=>toast("No se pudo leer la imagen"); img.src=url; });
 $("#cfgLogoDel").addEventListener("click",()=>saveCfg({logo:""}));
-$("#cfgForm").addEventListener("submit",e=>{ e.preventDefault(); const bl=readBloques(), bad=bl.find(b=>hm(b.ini)>=hm(b.fin)); if(bad){ toast(`En el bloque ${bad.n}, el inicio debe ser antes del fin`); return; } saveCfg({bloques:bl, nombre:$("#cfgNombre").value.trim()||DEF_NAME, hora:$("#cfgHora").value||"08:10", umbral:Math.max(1,Number($("#cfgUmbral").value)||3), periodo:$("#cfgPeriodo").value, firma12:$("#cfgFirma12").value.trim(), cargo12:$("#cfgCargo12").value.trim(), firma34:$("#cfgFirma34").value.trim(), cargo34:$("#cfgCargo34").value.trim(), ciudad:$("#cfgCiudad").value.trim()||"San Fernando", horaCit:$("#cfgHoraCit").value||"08:30", papel:Number($("#cfgPapel").value)||58, voucherAuto:$("#cfgVAuto").checked}); renderAlerts(); document.activeElement?.blur(); });
-async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de datos"); return; } const next={...S.cfg,...patch}, LBL={nombre:"nombre del establecimiento",hora:"hora de ingreso",umbral:"atrasos para citar",periodo:"período de conteo",firma12:"firma 1° y 2°",cargo12:"cargo 1° y 2°",firma34:"firma 3° y 4°",cargo34:"cargo 3° y 4°",ciudad:"ciudad",horaCit:"hora de citación",papel:"papel del boucher",voucherAuto:"boucher automático",logo:"insignia",bloques:"bloques de clases"}, cambios=Object.keys(patch).filter(k=>JSON.stringify(S.cfg[k])!==JSON.stringify(patch[k])); try{ await writeRetry(()=>S.db.doc("config/escuela").set(next)); S.cfg=next; renderBrand(); if(cambios.length) logHist({cat:"Configuración",tipo:"config",desc:`Configuración cambiada: ${cambios.map(k=>LBL[k]||k).join(", ")}`}); toast("Configuración guardada"); }catch(err){ toast(dbErr(err)); } }
+$("#btnRespaldo").addEventListener("click", async ()=>{ const b=$("#btnRespaldo"); b.disabled=true; b.textContent="Preparando respaldo…";
+  try{ const out={generado:new Date().toISOString(),version:1,datos:{}}; for(const c of ["cursos","atrasos","citaciones","autorizaciones","historial"]){ const sn=await S.db.collection(c).get(); out.datos[c]={}; sn.docs.forEach(d=>{ out.datos[c][d.id]=d.data(); }); }
+    const e=await S.db.doc("config/escuela").get(); out.datos.config={escuela:e.exists?e.data():null};
+    await S.dl.save({filename:`respaldo_controlatrasos_${dateKey(new Date())}.json`, data:new Blob([JSON.stringify(out)],{type:"application/json"})}); logHist({cat:"Configuración",tipo:"respaldo",desc:"Respaldo completo descargado"}); toast("Respaldo descargado"); }
+  catch(err){ toast(err?.code?dbErr(err):"No se pudo generar el respaldo"); } finally{ b.disabled=false; b.textContent="Descargar respaldo completo"; } });
+$("#cfgForm").addEventListener("submit",e=>{ e.preventDefault(); const bl=readBloques(), bad=bl.find(b=>hm(b.ini)>=hm(b.fin)); if(bad){ toast(`En el bloque ${bad.n}, el inicio debe ser antes del fin`); return; } saveCfg({bloques:bl, modoPrueba:$("#cfgPrueba").checked, nombre:$("#cfgNombre").value.trim()||DEF_NAME, hora:$("#cfgHora").value||"08:10", umbral:Math.max(1,Number($("#cfgUmbral").value)||3), periodo:$("#cfgPeriodo").value, firma12:$("#cfgFirma12").value.trim(), cargo12:$("#cfgCargo12").value.trim(), firma34:$("#cfgFirma34").value.trim(), cargo34:$("#cfgCargo34").value.trim(), ciudad:$("#cfgCiudad").value.trim()||"San Fernando", horaCit:$("#cfgHoraCit").value||"08:30", papel:Number($("#cfgPapel").value)||58, voucherAuto:$("#cfgVAuto").checked}); renderAlerts(); document.activeElement?.blur(); });
+async function saveCfg(patch){ if(!S.db){ toast("Sin conexión a la base de datos"); return; } const next={...S.cfg,...patch}, LBL={nombre:"nombre del establecimiento",hora:"hora de ingreso",umbral:"atrasos para citar",periodo:"período de conteo",firma12:"firma 1° y 2°",cargo12:"cargo 1° y 2°",firma34:"firma 3° y 4°",cargo34:"cargo 3° y 4°",ciudad:"ciudad",horaCit:"hora de citación",papel:"papel del boucher",voucherAuto:"boucher automático",logo:"insignia",bloques:"bloques de clases",modoPrueba:"modo de pruebas"}, cambios=Object.keys(patch).filter(k=>JSON.stringify(S.cfg[k])!==JSON.stringify(patch[k])); try{ await writeRetry(()=>S.db.doc("config/escuela").set(next)); S.cfg=next; renderBrand(); if(cambios.length) logHist({cat:"Configuración",tipo:"config",desc:`Configuración cambiada: ${cambios.map(k=>LBL[k]||k).join(", ")}`}); toast("Configuración guardada"); }catch(err){ toast(dbErr(err)); } }
 
 /* ---------- subscriptions ---------- */
 let unsubAtr=null;
@@ -1016,13 +1038,26 @@ document.querySelectorAll("[data-rs]").forEach(b=>b.addEventListener("click",()=
 /* ---------- acceso de director: ve solo el Resumen ----------
    Las cuentas se listan en Firestore: config/directores { "pin<PIN>@atrasos.cl": "Nombre" }.
    Es una vista limitada de la pantalla; los permisos de la base de datos son los mismos que los de cualquier funcionario. */
-function applyRol(){ const em=S.auth?.currentUser?.email, dir=!!(em && S.dir && S.dir[em]!==undefined); S.rol=dir?"director":""; document.body.classList.toggle("rol-director",dir);
-  document.querySelectorAll("nav.tabs button").forEach(b=>{ b.hidden = dir && b.dataset.tab!=="resumen"; }); if(dir) showTab("resumen"); showUser(); }
+/* Roles (documento usuarios/{uid} = {rol, nombre}, que solo el administrador puede escribir; las reglas de la base los hacen cumplir):
+   admin = todo · inspector = todo menos Configuración · porteria = Ingreso y Registro · director = solo Resumen (lectura).
+   Si la cuenta aún no tiene documento en «usuarios» (modo antiguo, mientras se migra) se usa la lista config/directores y se permite todo lo demás. */
+const ROLES=["admin","inspector","porteria","director"];
+const TABS_ROL={inspector:["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial"],porteria:["ingreso","registro"],director:["resumen"]};
+function rolEfectivo(){ if(S.usr) return S.usr.rol; const em=S.auth?.currentUser?.email; return (em && S.dir && S.dir[em]!==undefined)?"director":"legacy"; }
+function puedeTab(t){ const ok=TABS_ROL[rolEfectivo()]; return !ok||ok.includes(t); }
+async function cargarUsuario(){ const u=S.auth?.currentUser; if(!u||!S.db) return; try{ const sn=await S.db.doc("usuarios/"+u.uid).get(); if(sn.exists){ const d=sn.data(); if(ROLES.includes(d.rol)) S.usr={rol:d.rol,nombre:String(d.nombre||"")}; } }catch(e){} applyRol(); }
+function applyRol(){ const r=rolEfectivo(); S.rol=r; ROLES.concat("legacy").forEach(x=>document.body.classList.toggle("rol-"+x,x===r));
+  document.querySelectorAll("nav.tabs button").forEach(b=>{ b.hidden=!puedeTab(b.dataset.tab); });
+  const cur=document.querySelector('nav.tabs button[aria-selected="true"]')?.dataset.tab||"ingreso"; if(r==="director"||!puedeTab(cur)) showTab(r==="director"?"resumen":"ingreso");
+  showUser(); armIdle(); renderTools(); }
+let idleT=null; function armIdle(){ clearTimeout(idleT); if(!S.usr||S.usr.rol==="porteria") return; const reset=()=>{ clearTimeout(idleT); idleT=setTimeout(cerrarSesion,30*60*1000); };
+  if(!armIdle.on){ ["click","keydown","pointerdown","touchstart"].forEach(ev=>document.addEventListener(ev,()=>{ if(S.usr&&S.usr.rol!=="porteria") reset(); },{passive:true})); armIdle.on=true; } reset(); }
+async function cerrarSesion(){ try{ await S.auth.signOut(); }catch(e){} try{ const fs=firebase.firestore(); await fs.terminate(); await fs.clearPersistence(); }catch(e){} location.reload(); }
 
 /* ---------- historial de cambios ---------- */
 function quien(){ return $("#userName").textContent||""; }
 function apeDe(a){ return a.nombre.split(" ").slice(0,2).join("_").normalize("NFD").replace(/[̀-ͯ]/g,""); }
-function logHist(o){ try{ if(!S.db) return; const d=JSON.parse(JSON.stringify({ts:new Date().toISOString(), por:quien(), ...o})); S.db.collection("historial").add(d).catch(()=>{}); }catch(e){} }
+function logHist(o){ try{ if(!S.db) return; const d=JSON.parse(JSON.stringify({ts:new Date().toISOString(), por:quien(), uid:S.auth?.currentUser?.uid||"", rol:rolEfectivo(), ...o})); S.db.collection("historial").add(d).catch(()=>{}); }catch(e){} }
 function logCarta(a,antes,despues,fc,hc){ const base={cat:"Citaciones",rut:a.rut,nombre:a.nombre,curso:a.curso,ref:{id:a.id}}, d=`Carta de citación generada para el ${String(fc).split("-").reverse().join("-")} ${hc} (${periodoLabel(a.periodo)}${a.tramo>1?`, ${a.tramo}ª citación`:""})`;
   if(antes!==despues) logHist({...base,tipo:"citacion_estado",antes,despues,desc:`${d} · ${EST[antes][0]} → ${EST[despues][0]}`}); else logHist({...base,tipo:"citacion_carta",desc:d}); }
 async function setEstadoCit(a,nuevo,extra){ extra=extra||{}; const antes=estadoDe(a), c=a.cit||{}, ahora=new Date().toISOString(), tramo=a.tramo||c.tramo||1, periodo=a.periodo||c.periodo||"";
@@ -1073,8 +1108,8 @@ $("#hBody").addEventListener("click", async e=>{ const b=e.target.closest("[data
 
 /* ---------- sesión ---------- */
 // Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = correo (o UID), valor = nombre.
-async function showUser(){ const u=S.auth?.currentUser; if(!u) return; let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
-$("#logoutBtn").addEventListener("click", async ()=>{ try{ await S.auth.signOut(); }catch(e){} location.reload(); });
+async function showUser(){ const u=S.auth?.currentUser; if(!u) return; if(S.usr){ $("#userName").textContent=S.usr.nombre||"Funcionario"; $("#userBox").style.display="flex"; return; } let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
+$("#logoutBtn").addEventListener("click", cerrarSesion);
 
 /* ---------- Firebase ----------
    Pega aquí la configuración de tu app web (Firebase Console > Configuración del proyecto > Tus apps). */
@@ -1090,14 +1125,17 @@ const FIREBASE_CONFIG = {
 // En Firestore update() reemplaza mapas completos, por eso update se traduce a set con merge.
 function wrapDoc(ref){ return { get:()=>ref.get(), set:d=>ref.set(d), update:d=>ref.set(d,{merge:true}), delete:()=>ref.delete(), onSnapshot:(a,b)=>ref.onSnapshot(a,b) }; }
 function wrapDb(fs){ return { doc:p=>wrapDoc(fs.doc(p)), collection:n=>fs.collection(n) }; }
-// El funcionario solo escribe su PIN de 4 dígitos. Internamente es una cuenta de Firebase Authentication:
-// correo = pin<PIN>@atrasos.cl, contraseña = <PIN>00 (Firebase exige mínimo 6 caracteres).
-function askLogin(auth){ return new Promise(res=>{ const box=$("#loginBox"), f=$("#loginForm"), err=m=>$("#loginErr").textContent=m; let fails=0, lock=0;
-  box.hidden=false; box.style.display="flex"; $("#loginPin").value=""; $("#loginPin").focus();
-  f.onsubmit=async e=>{ e.preventDefault(); if(Date.now()<lock){ err("Demasiados intentos. Espera 30 segundos."); return; }
-    const pin=$("#loginPin").value; if(!/^\d{4}$/.test(pin)){ err("El PIN debe tener 4 dígitos."); return; }
-    try{ await auth.signInWithEmailAndPassword(`pin${pin}@atrasos.cl`, pin+"00"); box.style.display="none"; box.hidden=true; res(); }
-    catch(ex){ if(++fails>=5){ fails=0; lock=Date.now()+30000; } err(ex?.code==="auth/network-request-failed"?"Sin conexión. Intenta de nuevo.":"PIN incorrecto."); $("#loginPin").value=""; $("#loginPin").focus(); } }; }); }
+// Acceso: correo + contraseña (recomendado). El acceso con PIN de 4 dígitos es el sistema antiguo y se mantiene solo mientras existan esas cuentas
+// (correo = pin<PIN>@atrasos.cl, contraseña = <PIN>00); se elimina borrando esas cuentas en Firebase Authentication.
+function askLogin(auth){ return new Promise(res=>{ const box=$("#loginBox"), f=$("#loginForm"), err=m=>$("#loginErr").textContent=m; let fails=0, lock=0, nivel=0, pin=false;
+  const modo=p=>{ pin=p; $("#loginMail").hidden=p; $("#loginPin").hidden=!p; $("#loginReset").hidden=p; $("#loginModo").textContent=p?"Volver a correo y contraseña":"Entrar con PIN (acceso antiguo)"; $("#loginTitulo").textContent=p?"Ingresa tu PIN":"Inicia sesión"; err(""); (p?$("#loginPin"):$("#loginEmail")).focus(); };
+  box.hidden=false; box.style.display="flex"; $("#loginPin").value=""; $("#loginPass").value=""; modo(false);
+  $("#loginModo").onclick=()=>modo(!pin);
+  $("#loginReset").onclick=async()=>{ const em=$("#loginEmail").value.trim(); if(!em){ err("Escribe tu correo y vuelve a presionar «Olvidé mi contraseña»."); return; } try{ await auth.sendPasswordResetEmail(em); }catch(e){} err("Si el correo está registrado, te enviamos un enlace para crear una nueva contraseña."); };
+  f.onsubmit=async e=>{ e.preventDefault(); if(Date.now()<lock){ err(`Demasiados intentos. Espera ${Math.ceil((lock-Date.now())/1000)} segundos.`); return; }
+    let em, pw; if(pin){ const p=$("#loginPin").value; if(!/^\d{4}$/.test(p)){ err("El PIN debe tener 4 dígitos."); return; } em=`pin${p}@atrasos.cl`; pw=p+"00"; } else { em=$("#loginEmail").value.trim(); pw=$("#loginPass").value; if(!em||!pw){ err("Escribe tu correo y tu contraseña."); return; } }
+    try{ await auth.signInWithEmailAndPassword(em, pw); $("#loginPass").value=""; $("#loginPin").value=""; box.style.display="none"; box.hidden=true; res(); }
+    catch(ex){ if(++fails>=5){ fails=0; lock=Date.now()+30000*Math.pow(2,Math.min(nivel++,5)); } err(ex?.code==="auth/network-request-failed"?"Sin conexión. Intenta de nuevo.":ex?.code==="auth/too-many-requests"?"Demasiados intentos. Espera unos minutos.":(pin?"PIN incorrecto.":"Correo o contraseña incorrectos.")); $("#loginPass").value=""; $("#loginPin").value=""; (pin?$("#loginPin"):$("#loginPass")).focus(); } }; }); }
 async function connectFirebase(){
   if(typeof firebase==="undefined"){ showBanner("No se pudo cargar Firebase. Revisa la conexión a internet."); return null; }
   if(FIREBASE_CONFIG.apiKey==="REEMPLAZAR"){ showBanner("Falta configurar Firebase: pega tu firebaseConfig en index.html."); return null; }
@@ -1117,7 +1155,7 @@ async function boot(){
   S.dl = { save: async ({filename,data}) => { const a=document.createElement("a"); a.href=URL.createObjectURL(data); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),10000); } };
   const db = await connectFirebase();
   if(!db){ renderRegistro(); return; }
-  S.db=db; showUser(); db.collection("historial").orderBy("ts","desc").limit(500).onSnapshot(snap=>{ S.hist=snap.docs.map(d=>({id:d.id,...d.data()})); renderHist(); }, ()=>{}); db.doc("config/directores").onSnapshot(sn=>{ S.dir=sn.exists?sn.data():{}; applyRol(); }, ()=>{});
+  S.db=db; cargarUsuario(); db.collection("historial").orderBy("ts","desc").limit(500).onSnapshot(snap=>{ S.hist=snap.docs.map(d=>({id:d.id,...d.data()})); renderHist(); }, ()=>{}); db.doc("config/directores").onSnapshot(sn=>{ S.dir=sn.exists?sn.data():{}; applyRol(); }, ()=>{});
   db.doc("config/escuela").onSnapshot(s=>{ if(s.exists){ S.cfg={...S.cfg,...s.data()}; renderBrand(); renderAlerts(); } });
   db.collection("cursos").onSnapshot(snap=>{ S.cursos.clear(); snap.docs.forEach(d=>S.cursos.set(d.id,d.data())); rebuildAlumnos(); renderAlumnos(); renderResumen(); }, ()=>showBanner("Se perdió la conexión con la base de alumnos. Recarga la página."));
   subscribeAtrasos();
