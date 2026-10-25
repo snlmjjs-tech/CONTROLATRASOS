@@ -184,7 +184,7 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
       <button role="tab" data-tab="historial" aria-selected="false">Historial de cambios</button>
       <button role="tab" data-tab="config" aria-selected="false">Configuración</button>
     </nav>
-    <div id="userBox" style="display:none;align-items:center;gap:8px;font-size:13px"><span>👤 <b id="userName"></b></span><button class="btn" id="logoutBtn" type="button" style="padding:6px 12px;font-size:13px">Cerrar sesión</button></div>
+    <div id="userBox" style="display:none;align-items:center;gap:8px;font-size:13px"><span>👤 <b id="userName"></b></span><button class="btn" id="pwBtn" type="button" style="padding:6px 12px;font-size:13px">Cambiar contraseña</button><button class="btn" id="logoutBtn" type="button" style="padding:6px 12px;font-size:13px">Cerrar sesión</button></div>
   </header>
   <div id="dbBanner" class="banner" hidden></div>
   <div id="alertBar" class="alertbar" hidden><span id="alertTxt"></span><button class="btn sm" id="alertGo">Ver citaciones</button></div>
@@ -401,6 +401,18 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
         <div class="row"><label class="f" style="flex:1 1 200px">RUT del alumno<input id="tstRut" value="19.340.660-2" autocomplete="off"></label><button class="btn" type="button" id="tstCrear">Crear 3 atrasos de prueba</button><button class="btn danger" type="button" id="tstBorrar">Borrar atrasos de prueba</button></div>
         <div id="tstMsg" style="font-size:14px;font-weight:700"></div>
       </div>
+      <div class="panel" id="usrPanel" style="background:var(--surface-2);margin-top:16px;display:grid;gap:10px">
+        <h3 style="margin:0">Usuarios y roles</h3>
+        <p class="muted" style="margin:0;font-size:13px">Las cuentas (correo y contraseña) se crean en Firebase → Authentication. Aquí le asignas un rol a cada una: <b>admin</b> (todo), <b>inspector</b> (todo menos Configuración), <b>porteria</b> (Ingreso y Registro) o <b>director</b> (solo Resumen). Tu UID: <code id="usrMiUid" style="word-break:break-all"></code></p>
+        <div class="tbl"><table><thead><tr><th>Nombre</th><th>UID</th><th>Rol</th><th></th></tr></thead><tbody id="usrBody"></tbody></table></div>
+        <form id="usrForm" class="row" style="align-items:flex-end">
+          <label class="f" style="flex:2 1 240px">UID de la cuenta<input id="usrUid" required autocomplete="off" placeholder="Cópialo desde Authentication → Usuarios"></label>
+          <label class="f" style="flex:1 1 160px">Nombre<input id="usrNombre" required maxlength="60" autocomplete="off"></label>
+          <label class="f" style="flex:2 1 220px">Correo (opcional, para recordar)<input id="usrMail" maxlength="120" autocomplete="off"></label>
+          <label class="f" style="flex:0 1 130px">Rol<select id="usrRol"><option value="admin">admin</option><option value="inspector">inspector</option><option value="porteria">porteria</option><option value="director">director</option></select></label>
+          <button class="btn primary" type="submit">Agregar</button>
+        </form>
+      </div>
       <div class="panel" style="background:var(--surface-2);margin-top:16px;display:grid;gap:8px;max-width:560px">
         <h3 style="margin:0">Respaldo</h3>
         <p class="muted" style="margin:0;font-size:13px">Descarga una copia de todos los datos (alumnos, atrasos, citaciones, historial). Contiene datos personales de menores: guárdala en un lugar privado y nunca la subas a GitHub ni la envíes por correo.</p>
@@ -432,6 +444,17 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
     <div class="row"><label class="f">Fecha de citación<input type="date" id="alertFc"></label><label class="f">Hora<input type="time" id="alertHc"></label></div>
     <div class="row"><button class="btn primary" id="alertPdf" type="button">Descargar citación (PDF)</button><button class="btn" id="alertClose" type="button">Cerrar</button></div>
   </div>
+</div>
+<div id="pwModal" hidden style="position:fixed;inset:0;z-index:8950;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px">
+  <form id="pwForm" style="background:var(--surface);color:var(--ink);border-radius:14px;padding:20px;max-width:380px;width:100%;display:grid;gap:10px">
+    <h2 style="margin:0">Cambiar mi contraseña</h2>
+    <p class="muted" style="margin:0;font-size:13px">Usa 12 o más caracteres que solo tú conozcas y que no uses en otro sitio.</p>
+    <label class="f">Contraseña actual<input id="pwCur" type="password" autocomplete="current-password" required></label>
+    <label class="f">Contraseña nueva<input id="pwNew" type="password" autocomplete="new-password" minlength="12" required></label>
+    <label class="f">Repite la contraseña nueva<input id="pwRep" type="password" autocomplete="new-password" minlength="12" required></label>
+    <div id="pwMsg" style="color:var(--bad);font-size:14px" role="alert"></div>
+    <div class="row"><button class="btn primary" type="submit" id="pwOk">Cambiar contraseña</button><button class="btn" type="button" id="pwCancel">Cancelar</button></div>
+  </form>
 </div>
 <div id="fichaModal" hidden style="position:fixed;inset:0;z-index:8900;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto">
   <div style="background:var(--surface);color:var(--ink);border-radius:14px;padding:20px;max-width:860px;width:100%;display:grid;gap:12px;margin:auto">
@@ -466,7 +489,7 @@ function titleName(s){ return String(s??"").trim().replace(/\s+/g," ").toLowerCa
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-function showTab(t){ if(!puedeTab(t)) t=rolEfectivo()==="director"?"resumen":"ingreso"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="historial") renderHist(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
+function showTab(t){ if(!puedeTab(t)) t=rolEfectivo()==="director"?"resumen":"ingreso"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="historial") renderHist(); if(t==="config") renderUsuarios(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
 $("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.classList.contains("kiosk-mode"); document.body.classList.toggle("kiosk-mode",on); $("#kioskBtn").textContent = on ? "Salir de modo kiosco" : "Modo kiosco"; if(on){ try{ await document.documentElement.requestFullscreen?.(); }catch(e){} try{ await navigator.wakeLock?.request("screen"); }catch(e){} } else { try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch(e){} } $("#rutInput").focus(); });
 
 /* ---------- bloques de clases (atraso a clase) ---------- */
@@ -1049,9 +1072,28 @@ async function cargarUsuario(){ const u=S.auth?.currentUser; if(!u||!S.db) retur
 function applyRol(){ const r=rolEfectivo(); S.rol=r; ROLES.concat("legacy").forEach(x=>document.body.classList.toggle("rol-"+x,x===r));
   document.querySelectorAll("nav.tabs button").forEach(b=>{ b.hidden=!puedeTab(b.dataset.tab); });
   const cur=document.querySelector('nav.tabs button[aria-selected="true"]')?.dataset.tab||"ingreso"; if(r==="director"||!puedeTab(cur)) showTab(r==="director"?"resumen":"ingreso");
-  showUser(); armIdle(); renderTools(); }
+  showUser(); armIdle(); renderTools(); $("#pwBtn").hidden=esCuentaPin(); if(r==="director"&&!applyRol.dir){ applyRol.dir=true; rsPreset("hoy"); } }
 let idleT=null; function armIdle(){ clearTimeout(idleT); if(!S.usr||S.usr.rol==="porteria") return; const reset=()=>{ clearTimeout(idleT); idleT=setTimeout(cerrarSesion,30*60*1000); };
   if(!armIdle.on){ ["click","keydown","pointerdown","touchstart"].forEach(ev=>document.addEventListener(ev,()=>{ if(S.usr&&S.usr.rol!=="porteria") reset(); },{passive:true})); armIdle.on=true; } reset(); }
+function esCuentaPin(){ return /^pin\d{4}@atrasos\.cl$/i.test(S.auth?.currentUser?.email||""); }
+function cierraPw(){ const m=$("#pwModal"); m.style.display="none"; m.hidden=true; $("#pwForm").reset(); $("#pwMsg").textContent=""; }
+$("#pwBtn").addEventListener("click",()=>{ $("#pwForm").reset(); $("#pwMsg").textContent=""; const m=$("#pwModal"); m.hidden=false; m.style.display="flex"; $("#pwCur").focus(); });
+$("#pwCancel").addEventListener("click",cierraPw);
+$("#pwForm").addEventListener("submit", async e=>{ e.preventDefault(); const u=S.auth?.currentUser, msg=t=>{ $("#pwMsg").textContent=t; }, cur=$("#pwCur").value, nw=$("#pwNew").value, rep=$("#pwRep").value;
+  if(!u?.email){ msg("No hay una sesión con correo."); return; } if(nw.length<12){ msg("La contraseña nueva debe tener 12 o más caracteres."); return; } if(nw!==rep){ msg("Las dos contraseñas nuevas no coinciden."); return; } if(nw===cur){ msg("La contraseña nueva debe ser distinta de la actual."); return; }
+  const b=$("#pwOk"); b.disabled=true;
+  try{ await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email,cur)); await u.updatePassword(nw); logHist({cat:"Configuración",tipo:"cambio_clave",desc:"Cambió su propia contraseña"}); cierraPw(); toast("Contraseña cambiada"); }
+  catch(err){ const c=err?.code||""; msg(c==="auth/wrong-password"||c==="auth/invalid-credential"||c==="auth/invalid-login-credentials"?"La contraseña actual no es correcta.":c==="auth/weak-password"?"La contraseña nueva es muy débil.":c==="auth/too-many-requests"?"Demasiados intentos. Espera unos minutos.":c==="auth/network-request-failed"?"Sin conexión. Intenta de nuevo.":"No se pudo cambiar la contraseña."); } finally{ b.disabled=false; } });
+async function renderUsuarios(){ if(S.rol!=="admin" && S.rol!=="legacy"){ return; } const tb=$("#usrBody"), mi=S.auth?.currentUser?.uid||""; $("#usrMiUid").textContent=mi;
+  try{ const sn=await S.db.collection("usuarios").get(); const rows=sn.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.nombre||"").localeCompare(String(b.nombre||""),"es"));
+    tb.innerHTML=rows.length?rows.map(u=>`<tr data-uid="${esc(u.id)}"><td>${esc(u.nombre||"")}<div class="muted" style="font-size:12px">${esc(u.email||"")}</div></td><td style="font-size:12px;word-break:break-all">${esc(u.id)}</td><td><select data-rol ${u.id===mi?"disabled":""}>${ROLES.map(x=>`<option value="${x}"${x===u.rol?" selected":""}>${x}</option>`).join("")}</select></td><td style="white-space:nowrap">${u.id===mi?'<span class="muted">(tú)</span>':'<button class="btn sm" data-ugd>Guardar rol</button> <button class="btn sm danger" data-uq>Quitar</button>'}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">Aún no hay cuentas con rol. Agrega primero la tuya (tu UID está arriba) como admin.</td></tr>`; }
+  catch(err){ tb.innerHTML=`<tr><td colspan="4" class="empty">${esc(err?.code?dbErr(err):"No se pudo cargar la lista.")}</td></tr>`; } }
+$("#usrForm").addEventListener("submit", async e=>{ e.preventDefault(); const uid=$("#usrUid").value.trim(), nombre=$("#usrNombre").value.trim(), email=$("#usrMail").value.trim(), rol=$("#usrRol").value;
+  if(!/^[A-Za-z0-9]{20,40}$/.test(uid)){ toast("El UID no parece válido: cópialo completo desde Authentication → Usuarios"); return; } if(!nombre||!ROLES.includes(rol)) return;
+  try{ const d={rol,nombre}; if(email) d.email=email; await writeRetry(()=>S.db.doc("usuarios/"+uid).set(d)); logHist({cat:"Configuración",tipo:"usuario_rol",nombre,desc:`Rol asignado: ${nombre} → ${rol}`}); e.target.reset(); toast("Usuario guardado"); if(uid===S.auth?.currentUser?.uid) await cargarUsuario(); renderUsuarios(); }catch(err){ toast(dbErr(err)); } });
+$("#usrBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr[data-uid]"); if(!tr) return; const uid=tr.dataset.uid, nom=tr.querySelector("td").firstChild.textContent;
+  const g=e.target.closest("[data-ugd]"); if(g){ const rol=tr.querySelector("[data-rol]").value; try{ await writeRetry(()=>S.db.doc("usuarios/"+uid).update({rol})); logHist({cat:"Configuración",tipo:"usuario_rol",nombre:nom,desc:`Rol cambiado: ${nom} → ${rol}`}); toast("Rol guardado"); renderUsuarios(); }catch(err){ toast(dbErr(err)); } return; }
+  const q=e.target.closest("[data-uq]"); if(q){ if(!q.dataset.confirm){ q.dataset.confirm="1"; q.textContent="¿Confirmar?"; setTimeout(()=>{ if(q.isConnected){ delete q.dataset.confirm; q.textContent="Quitar"; } },3000); return; } try{ await writeRetry(()=>S.db.doc("usuarios/"+uid).delete()); logHist({cat:"Configuración",tipo:"usuario_rol",nombre:nom,desc:`Rol quitado: ${nom}`}); toast("Rol quitado"); renderUsuarios(); }catch(err){ toast(dbErr(err)); } } });
 async function cerrarSesion(){ try{ await S.auth.signOut(); }catch(e){} try{ const fs=firebase.firestore(); await fs.terminate(); await fs.clearPersistence(); }catch(e){} location.reload(); }
 
 /* ---------- historial de cambios ---------- */
