@@ -20,7 +20,8 @@ service cloud.firestore {
       allow create, update: if esAdmin()
         && request.resource.data.keys().hasOnly(['rol', 'nombre', 'email'])
         && request.resource.data.rol in ['admin', 'inspector', 'porteria', 'director']
-        && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 60;
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 60
+        && request.resource.data.get('email', '') is string && request.resource.data.get('email', '').size() <= 120;
       allow delete: if esAdmin() && uid != request.auth.uid;
     }
 
