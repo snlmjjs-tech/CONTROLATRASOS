@@ -1,9 +1,121 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Solo usuarios autenticados (cuentas creadas por ti en Firebase Authentication).
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ---------- Roles ----------
+    // Cada cuenta debe tener un documento  usuarios/{uid}  con  {rol, nombre}.
+    // Si no lo tiene (o el rol no existe) NO puede leer ni escribir nada.
+    function rolDe() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol;
     }
+    function conSesion()     { return request.auth != null; }
+    function esAdmin()       { return conSesion() && rolDe() == 'admin'; }
+    function esInspector()   { return conSesion() && rolDe() in ['admin', 'inspector']; }
+    function esPorteria()    { return conSesion() && rolDe() in ['admin', 'inspector', 'porteria']; }
+    function puedeLeer()     { return conSesion() && rolDe() in ['admin', 'inspector', 'porteria', 'director']; }
+
+    // ---------- Usuarios (solo el administrador los crea o cambia) ----------
+    match /usuarios/{uid} {
+      allow read: if conSesion() && (request.auth.uid == uid || esAdmin());
+      allow create, update: if esAdmin()
+        && request.resource.data.keys().hasOnly(['rol', 'nombre', 'email'])
+        && request.resource.data.rol in ['admin', 'inspector', 'porteria', 'director']
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 60;
+      allow delete: if esAdmin() && uid != request.auth.uid;
+    }
+
+    // ---------- Alumnos por curso ----------
+    function cursoValido() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['nombre', 'alumnos'])
+        && d.nombre is string && d.nombre.size() > 0 && d.nombre.size() <= 60
+        && d.alumnos is map && d.alumnos.size() <= 1500;
+    }
+    // Portería solo puede AGREGAR alumnos (nunca quitar ni vaciar).
+    function noQuitaAlumnos() {
+      return request.resource.data.alumnos.keys().hasAll(resource.data.alumnos.keys());
+    }
+    match /cursos/{curso} {
+      allow read: if puedeLeer();
+      allow create: if esPorteria() && cursoValido();
+      allow update: if cursoValido() && (esInspector() || (esPorteria() && noQuitaAlumnos()));
+      allow delete: if esInspector();
+    }
+
+    // ---------- Atrasos (un documento por día: atrasos/AAAA-MM-DD) ----------
+    // Límite conocido: las reglas no pueden revisar cada atraso dentro del mapa «entries».
+    match /atrasos/{fecha} {
+      allow read: if puedeLeer();
+      allow create, update: if esPorteria()
+        && fecha.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.keys().hasOnly(['fecha', 'entries'])
+        && request.resource.data.fecha == fecha
+        && request.resource.data.entries is map
+        && request.resource.data.entries.size() <= 1500;
+      allow delete: if false;
+    }
+
+    // ---------- Citaciones ----------
+    function citValida() {
+      let d = request.resource.data;
+      return d.get('estado', 'pend') in ['pend', 'citado', 'asistio', 'no_asistio']
+        && d.get('rut', '') is string && d.get('rut', '').size() <= 12
+        && d.get('nombre', '') is string && d.get('nombre', '').size() <= 120
+        && d.get('curso', '') is string && d.get('curso', '').size() <= 60
+        && d.get('obs', '') is string && d.get('obs', '').size() <= 600;
+    }
+    // Portería solo puede pasar una citación a «pendiente» o «citado» (al emitir la carta).
+    function porteriaCita() {
+      return esPorteria()
+        && request.resource.data.get('estado', 'pend') in ['pend', 'citado']
+        && (resource == null || resource.data.get('estado', 'pend') in ['pend', 'citado']);
+    }
+    match /citaciones/{id} {
+      allow read: if puedeLeer();
+      allow create, update: if citValida()
+        && id.matches('^[0-9]{1,9}-[0-9kK]_[0-9]{4}(-[0-9]{2}|-S[12])?_[0-9]{1,3}$')
+        && (esInspector() || porteriaCita());
+      allow delete: if esAdmin();
+    }
+
+    // ---------- Horarios especiales ----------
+    match /autorizaciones/{rut} {
+      allow read: if esPorteria();
+      allow create, update: if esInspector()
+        && rut.matches('^[0-9]{1,9}-[0-9kK]$')
+        && request.resource.data.get('hora', '') is string
+        && request.resource.data.get('motivo', '') is string
+        && request.resource.data.get('motivo', '').size() <= 300;
+      allow delete: if esInspector();
+    }
+
+    // ---------- Historial de cambios (auditoría) ----------
+    // Se puede crear (con el uid de quien lo hace), pero NUNCA borrar ni reescribir;
+    // lo único que se puede cambiar es la marca «deshecho».
+    match /historial/{id} {
+      allow read: if esInspector();
+      allow create: if esPorteria()
+        && request.resource.data.keys().hasAll(['ts', 'por', 'cat', 'tipo'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.get('desc', '') is string
+        && request.resource.data.get('desc', '').size() <= 800;
+      allow update: if esInspector()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revertido', 'revertidoPor', 'revertidoTs']);
+      allow delete: if false;
+    }
+
+    // ---------- Configuración ----------
+    match /config/escuela {
+      allow read: if puedeLeer();
+      allow write: if esAdmin()
+        && request.resource.data.get('logo', '') is string
+        && request.resource.data.get('logo', '').size() < 300000;
+    }
+    // Listas antiguas de cuentas (modo anterior): solo el administrador las ve.
+    match /config/{otro} {
+      allow read, write: if otro != 'escuela' && esAdmin();
+    }
+
+    // Todo lo demás: denegado.
   }
 }
