@@ -1066,7 +1066,13 @@ const ROLES=["admin","inspector","porteria","director"];
 const TABS_ROL={inspector:["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial"],porteria:["ingreso","registro"],director:["resumen"]};
 function rolEfectivo(){ if(S.usr) return S.usr.rol; const em=S.auth?.currentUser?.email; return (em && S.dir && S.dir[em]!==undefined)?"director":"legacy"; }
 function puedeTab(t){ const ok=TABS_ROL[rolEfectivo()]; return !ok||ok.includes(t); }
-async function cargarUsuario(){ const u=S.auth?.currentUser; if(!u||!S.db) return; try{ const sn=await S.db.doc("usuarios/"+u.uid).get(); if(sn.exists){ const d=sn.data(); if(ROLES.includes(d.rol)) S.usr={rol:d.rol,nombre:String(d.nombre||"")}; } }catch(e){} applyRol(); }
+/* Lee el rol de la cuenta. Si falla la lectura (por ejemplo, la conexión aún no está lista al abrir la página) se reintenta, en vez de mostrar «Funcionario». */
+async function cargarUsuario(intento=0){ const u=S.auth?.currentUser; if(!u||!S.db) return; clearTimeout(cargarUsuario.t);
+  try{ const sn=await S.db.doc("usuarios/"+u.uid).get(); if(sn.exists){ const d=sn.data(); if(ROLES.includes(d.rol)){ S.usr={rol:d.rol,nombre:String(d.nombre||"")}; S.usrEstado="ok"; } else S.usrEstado="sinrol"; } else S.usrEstado="sinrol"; }
+  catch(e){ S.usrEstado="error"; if(intento<6){ cargarUsuario.t=setTimeout(()=>cargarUsuario(intento+1),1500*(intento+1)); } }
+  if(S.usrEstado==="sinrol") showBanner("Tu cuenta no tiene un rol asignado. Pídele al administrador que te lo asigne.");
+  applyRol(); }
+window.addEventListener("online",()=>{ if(!S.usr) cargarUsuario(); });
 function applyRol(){ const r=rolEfectivo(); S.rol=r; ROLES.concat("legacy").forEach(x=>document.body.classList.toggle("rol-"+x,x===r));
   document.querySelectorAll("nav.tabs button").forEach(b=>{ b.hidden=!puedeTab(b.dataset.tab); });
   const cur=document.querySelector('nav.tabs button[aria-selected="true"]')?.dataset.tab||"ingreso"; if(r==="director"||!puedeTab(cur)) showTab(r==="director"?"resumen":"ingreso");
@@ -1156,7 +1162,7 @@ $("#hBody").addEventListener("click", async e=>{ const b=e.target.closest("[data
 
 /* ---------- sesión ---------- */
 // Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = correo (o UID), valor = nombre.
-async function showUser(){ const u=S.auth?.currentUser; if(!u) return; if(S.usr){ $("#userName").textContent=S.usr.nombre||"Funcionario"; $("#userBox").style.display="flex"; return; } let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
+async function showUser(){ const u=S.auth?.currentUser; if(!u) return; if(S.usr){ $("#userName").textContent=S.usr.nombre||"Funcionario"; $("#userBox").style.display="flex"; return; } if(S.usrEstado==="sinrol"){ $("#userName").textContent="Sin rol asignado"; $("#userBox").style.display="flex"; return; } if(S.usrEstado==="error"){ $("#userName").textContent="Cargando permisos…"; $("#userBox").style.display="flex"; return; } let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
 $("#logoutBtn").addEventListener("click", cerrarSesion);
 
 /* ---------- Firebase ----------
