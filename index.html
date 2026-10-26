@@ -1074,8 +1074,14 @@ function applyRol(){ const r=rolEfectivo(); S.rol=r; ROLES.concat("legacy").forE
 let idleT=null; function armIdle(){ clearTimeout(idleT); if(!S.usr||S.usr.rol==="porteria") return; const reset=()=>{ clearTimeout(idleT); idleT=setTimeout(cerrarSesion,30*60*1000); };
   if(!armIdle.on){ ["click","keydown","pointerdown","touchstart"].forEach(ev=>document.addEventListener(ev,()=>{ if(S.usr&&S.usr.rol!=="porteria") reset(); },{passive:true})); armIdle.on=true; } reset(); }
 function esCuentaPin(){ return /^pin\d{4}@atrasos\.cl$/i.test(S.auth?.currentUser?.email||""); }
-function cierraPw(){ const m=$("#pwModal"); m.style.display="none"; m.hidden=true; $("#pwForm").reset(); $("#pwMsg").textContent=""; }
-$("#pwBtn").addEventListener("click",()=>{ $("#pwForm").reset(); $("#pwMsg").textContent=""; const m=$("#pwModal"); m.hidden=false; m.style.display="flex"; $("#pwCur").focus(); });
+function ocultaPw(){ ["#pwCur","#pwNew","#pwRep","#loginPass"].forEach(x=>{ const i=$(x); i.type="password"; if(i._ojo){ i._ojo.textContent="👁"; i._ojo.setAttribute("aria-label","Mostrar contraseña"); } }); }
+function cierraPw(){ const m=$("#pwModal"); m.style.display="none"; m.hidden=true; $("#pwForm").reset(); $("#pwMsg").textContent=""; ocultaPw(); }
+/* ojo para ver lo que se escribe en los campos de contraseña */
+function conOjo(inp){ const w=document.createElement("span"); w.style.cssText="position:relative;display:block"; inp.parentNode.insertBefore(w,inp); w.appendChild(inp); inp.style.paddingRight="46px"; inp.style.width="100%"; inp.style.boxSizing="border-box";
+  const b=document.createElement("button"); b.type="button"; b.textContent="👁"; b.title="Mostrar u ocultar la contraseña"; b.setAttribute("aria-label","Mostrar contraseña"); b.style.cssText="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;padding:6px";
+  b.addEventListener("click",()=>{ const ver=inp.type==="password"; inp.type=ver?"text":"password"; b.textContent=ver?"🙈":"👁"; b.setAttribute("aria-label",ver?"Ocultar contraseña":"Mostrar contraseña"); inp.focus(); }); w.appendChild(b); inp._ojo=b; }
+["#loginPass","#pwCur","#pwNew","#pwRep"].forEach(x=>conOjo($(x)));
+$("#pwBtn").addEventListener("click",()=>{ $("#pwForm").reset(); $("#pwMsg").textContent=""; ocultaPw(); const m=$("#pwModal"); m.hidden=false; m.style.display="flex"; $("#pwCur").focus(); });
 $("#pwCancel").addEventListener("click",cierraPw);
 $("#pwForm").addEventListener("submit", async e=>{ e.preventDefault(); const u=S.auth?.currentUser, msg=t=>{ $("#pwMsg").textContent=t; }, cur=$("#pwCur").value, nw=$("#pwNew").value, rep=$("#pwRep").value;
   if(!u?.email){ msg("No hay una sesión con correo."); return; } if(nw.length<12){ msg("La contraseña nueva debe tener 12 o más caracteres."); return; } if(nw!==rep){ msg("Las dos contraseñas nuevas no coinciden."); return; } if(nw===cur){ msg("La contraseña nueva debe ser distinta de la actual."); return; }
