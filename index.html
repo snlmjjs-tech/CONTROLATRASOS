@@ -1109,7 +1109,7 @@ $("#usrBody").addEventListener("click", async e=>{ const tr=e.target.closest("tr
 async function cerrarSesion(){ try{ await S.auth.signOut(); }catch(e){} try{ const fs=firebase.firestore(); await fs.terminate(); await fs.clearPersistence(); }catch(e){} location.reload(); }
 
 /* ---------- historial de cambios ---------- */
-function quien(){ return $("#userName").textContent||""; }
+function quien(){ return S.usr?.nombre || $("#userName").textContent || ""; }
 function apeDe(a){ return a.nombre.split(" ").slice(0,2).join("_").normalize("NFD").replace(/[̀-ͯ]/g,""); }
 function logHist(o){ try{ if(!S.db) return; const d=JSON.parse(JSON.stringify({ts:new Date().toISOString(), por:quien(), uid:S.auth?.currentUser?.uid||"", rol:rolEfectivo(), ...o})); S.db.collection("historial").add(d).catch(()=>{}); }catch(e){} }
 function logCarta(a,antes,despues,fc,hc){ const base={cat:"Citaciones",rut:a.rut,nombre:a.nombre,curso:a.curso,ref:{id:a.id}}, d=`Carta de citación generada para el ${String(fc).split("-").reverse().join("-")} ${hc} (${periodoLabel(a.periodo)}${a.tramo>1?`, ${a.tramo}ª citación`:""})`;
@@ -1162,7 +1162,8 @@ $("#hBody").addEventListener("click", async e=>{ const b=e.target.closest("[data
 
 /* ---------- sesión ---------- */
 // Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = correo (o UID), valor = nombre.
-async function showUser(){ const u=S.auth?.currentUser; if(!u) return; if(S.usr){ $("#userName").textContent=S.usr.nombre||"Funcionario"; $("#userBox").style.display="flex"; return; } if(S.usrEstado==="sinrol"){ $("#userName").textContent="Sin rol asignado"; $("#userBox").style.display="flex"; return; } if(S.usrEstado==="error"){ $("#userName").textContent="Cargando permisos…"; $("#userBox").style.display="flex"; return; } let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
+/* El nombre sale solo del documento usuarios/{uid}; así ninguna lectura lenta puede pisarlo con «Funcionario». */
+function showUser(){ const u=S.auth?.currentUser; if(!u) return; $("#userName").textContent = S.usr ? (S.usr.nombre||"Usuario") : S.usrEstado==="sinrol" ? "Sin rol asignado" : "Cargando permisos…"; $("#userBox").style.display="flex"; }
 $("#logoutBtn").addEventListener("click", cerrarSesion);
 
 /* ---------- Firebase ----------
