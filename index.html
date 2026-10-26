@@ -1066,7 +1066,13 @@ const ROLES=["admin","inspector","porteria","director"];
 const TABS_ROL={inspector:["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial"],porteria:["ingreso","registro"],director:["resumen"]};
 function rolEfectivo(){ if(S.usr) return S.usr.rol; const em=S.auth?.currentUser?.email; return (em && S.dir && S.dir[em]!==undefined)?"director":"legacy"; }
 function puedeTab(t){ const ok=TABS_ROL[rolEfectivo()]; return !ok||ok.includes(t); }
-async function cargarUsuario(){ const u=S.auth?.currentUser; if(!u||!S.db) return; try{ const sn=await S.db.doc("usuarios/"+u.uid).get(); if(sn.exists){ const d=sn.data(); if(ROLES.includes(d.rol)) S.usr={rol:d.rol,nombre:String(d.nombre||"")}; } }catch(e){} applyRol(); }
+/* Lee el rol de la cuenta. Si falla la lectura (por ejemplo, la conexión aún no está lista al abrir la página) se reintenta, en vez de mostrar «Funcionario». */
+async function cargarUsuario(intento=0){ const u=S.auth?.currentUser; if(!u||!S.db) return; clearTimeout(cargarUsuario.t);
+  try{ const sn=await S.db.doc("usuarios/"+u.uid).get(); if(sn.exists){ const d=sn.data(); if(ROLES.includes(d.rol)){ S.usr={rol:d.rol,nombre:String(d.nombre||"")}; S.usrEstado="ok"; } else S.usrEstado="sinrol"; } else S.usrEstado="sinrol"; }
+  catch(e){ S.usrEstado="error"; if(intento<6){ cargarUsuario.t=setTimeout(()=>cargarUsuario(intento+1),1500*(intento+1)); } }
+  if(S.usrEstado==="sinrol") showBanner("Tu cuenta no tiene un rol asignado. Pídele al administrador que te lo asigne.");
+  applyRol(); }
+window.addEventListener("online",()=>{ if(!S.usr) cargarUsuario(); });
 function applyRol(){ const r=rolEfectivo(); S.rol=r; ROLES.concat("legacy").forEach(x=>document.body.classList.toggle("rol-"+x,x===r));
   document.querySelectorAll("nav.tabs button").forEach(b=>{ b.hidden=!puedeTab(b.dataset.tab); });
   const cur=document.querySelector('nav.tabs button[aria-selected="true"]')?.dataset.tab||"ingreso"; if(r==="director"||!puedeTab(cur)) showTab(r==="director"?"resumen":"ingreso");
@@ -1156,7 +1162,7 @@ $("#hBody").addEventListener("click", async e=>{ const b=e.target.closest("[data
 
 /* ---------- sesión ---------- */
 // Los nombres viven en Firestore (config/funcionarios): un campo por cuenta, nombre del campo = correo (o UID), valor = nombre.
-async function showUser(){ const u=S.auth?.currentUser; if(!u) return; if(S.usr){ $("#userName").textContent=S.usr.nombre||"Funcionario"; $("#userBox").style.display="flex"; return; } let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
+async function showUser(){ const u=S.auth?.currentUser; if(!u) return; if(S.usr){ $("#userName").textContent=S.usr.nombre||"Funcionario"; $("#userBox").style.display="flex"; return; } if(S.usrEstado==="sinrol"){ $("#userName").textContent="Sin rol asignado"; $("#userBox").style.display="flex"; return; } if(S.usrEstado==="error"){ $("#userName").textContent="Cargando permisos…"; $("#userBox").style.display="flex"; return; } let nombre="Funcionario"; try{ const sn=await S.db.doc("config/funcionarios").get(); const d=sn.exists?sn.data():{}, n=d[u.email]||d[u.uid]; if(n) nombre=n; }catch(e){} if(nombre==="Funcionario" && typeof (S.dir||{})[u.email]==="string") nombre=S.dir[u.email]; $("#userName").textContent=nombre; $("#userBox").style.display="flex"; }
 $("#logoutBtn").addEventListener("click", cerrarSesion);
 
 /* ---------- Firebase ----------
@@ -1182,7 +1188,7 @@ function askLogin(auth){ return new Promise(res=>{ const box=$("#loginBox"), f=$
   f.onsubmit=async e=>{ e.preventDefault(); if(Date.now()<lock){ err(`Demasiados intentos. Espera ${Math.ceil((lock-Date.now())/1000)} segundos.`); return; }
     const em=conDominio($("#loginEmail").value), pw=$("#loginPass").value; if(!em||!pw){ err("Escribe tu usuario (o correo) y tu contraseña."); return; }
     try{ await auth.signInWithEmailAndPassword(em, pw); $("#loginPass").value=""; box.style.display="none"; box.hidden=true; res(); }
-    catch(ex){ if(++fails>=5){ fails=0; lock=Date.now()+30000*Math.pow(2,Math.min(nivel++,5)); } err(ex?.code==="auth/network-request-failed"?"Sin conexión. Intenta de nuevo.":ex?.code==="auth/too-many-requests"?"Demasiados intentos. Espera unos minutos.":"Usuario o contraseña incorrectos."); $("#loginPass").value=""; $("#loginPass").focus(); } }; }); }
+    catch(ex){ if(++fails>=5){ fails=0; lock=Date.now()+30000*Math.pow(2,Math.min(nivel++,5)); } const c=String(ex?.code||""); err(c==="auth/network-request-failed"?"Sin conexión. Intenta de nuevo.":c==="auth/too-many-requests"?"Demasiados intentos. Espera unos minutos.":c==="auth/user-disabled"?"Esta cuenta está inhabilitada. Avisa al administrador.":["auth/invalid-credential","auth/invalid-login-credentials","auth/wrong-password","auth/user-not-found","auth/invalid-email"].includes(c)?"Usuario o contraseña incorrectos.":`No se pudo entrar (${c||"error desconocido"}). Avisa al administrador y dile este código.`); $("#loginPass").value=""; $("#loginPass").focus(); } }; }); }
 async function connectFirebase(){
   if(typeof firebase==="undefined"){ showBanner("No se pudo cargar Firebase. Revisa la conexión a internet."); return null; }
   if(FIREBASE_CONFIG.apiKey==="REEMPLAZAR"){ showBanner("Falta configurar Firebase: pega tu firebaseConfig en index.html."); return null; }
