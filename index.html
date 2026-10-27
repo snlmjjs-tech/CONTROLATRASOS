@@ -242,6 +242,7 @@ tr.cit-no td:first-child{box-shadow:inset 4px 0 0 var(--bad)}
       <div class="row" style="margin-top:14px">
         <label class="f">Desde<input type="date" id="fDesde"></label>
         <label class="f">Hasta<input type="date" id="fHasta"></label>
+        <div class="rs-presets" style="align-self:flex-end;padding-bottom:6px"><button type="button" class="btn sm" data-fr="hoy">Hoy</button><button type="button" class="btn sm" data-fr="semana">Esta semana</button><button type="button" class="btn sm" data-fr="mes">Este mes</button></div>
         <div class="f" id="fCursoBox" style="position:relative;display:grid;gap:4px;font-size:13px;color:var(--muted);font-weight:700">Cursos
           <button type="button" class="btn" id="fCursoBtn" style="text-align:left;min-width:150px;max-width:220px;padding:9px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Todos</button>
           <div id="fCursoMenu" hidden style="position:absolute;z-index:30;top:100%;left:0;margin-top:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);width:250px;max-height:340px;overflow:auto"></div>
@@ -487,7 +488,7 @@ function titleName(s){ return String(s??"").trim().replace(/\s+/g," ").toLowerCa
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-function showTab(t){ if(!puedeTab(t)) t=rolEfectivo()==="director"?"resumen":"ingreso"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="historial") renderHist(); if(t==="config") renderUsuarios(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro") renderRegistro(); if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
+function showTab(t){ if(!puedeTab(t)) t=rolEfectivo()==="director"?"resumen":"ingreso"; document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===t))); ["ingreso","registro","resumen","citaciones","autorizaciones","alumnos","historial","config"].forEach(x=>$("#tab-"+x).hidden = x!==t); if(t==="resumen") renderResumen(); if(t==="historial") renderHist(); if(t==="config") renderUsuarios(); if(t==="citaciones") renderCitaciones(); if(t==="autorizaciones") renderAut(); if(t==="ingreso") $("#rutInput").focus(); if(t==="registro"){ fechasHoy(); renderRegistro(); } if(t==="alumnos") renderAlumnos(); try{localStorage.setItem("tab",t)}catch(e){} }
 $("#kioskBtn").addEventListener("click", async ()=>{ const on=!document.body.classList.contains("kiosk-mode"); document.body.classList.toggle("kiosk-mode",on); $("#kioskBtn").textContent = on ? "Salir de modo kiosco" : "Modo kiosco"; if(on){ try{ await document.documentElement.requestFullscreen?.(); }catch(e){} try{ await navigator.wakeLock?.request("screen"); }catch(e){} } else { try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch(e){} } $("#rutInput").focus(); });
 
 /* ---------- bloques de clases (atraso a clase) ---------- */
@@ -617,7 +618,13 @@ function showResult(kind, al, line, nMes, nAnio, isNew){
 function renderToday(){ const d=S.dias.get(dateKey(new Date())); const ents=Object.values(d?.entries||{}).filter(x=>!x.anulado), n=ents.filter(x=>x.tipo!=="clase").length, m=ents.length-n; $("#todayCount").textContent=`Atrasos de hoy: ${n}${m?` · a clases: ${m}`:""}`; }
 
 /* ---------- registro ---------- */
-(function initFilters(){ const d=new Date(); $("#fDesde").value=dateKey(new Date(d.getFullYear(),d.getMonth(),1)); $("#fHasta").value=dateKey(d); })();
+/* El Registro abre mostrando solo el día de hoy. Mientras no cambies las fechas a mano, siguen al día actual (también si la pestaña queda abierta de un día para otro). */
+let fAuto=true;
+(function initFilters(){ const h=dateKey(new Date()); $("#fDesde").value=h; $("#fHasta").value=h; })();
+function fechasHoy(){ if(!fAuto) return false; const h=dateKey(new Date()); if($("#fDesde").value===h && $("#fHasta").value===h) return false; $("#fDesde").value=h; $("#fHasta").value=h; return true; }
+["#fDesde","#fHasta"].forEach(x=>$(x).addEventListener("input",()=>{ fAuto=false; }));
+document.querySelectorAll("[data-fr]").forEach(b=>b.addEventListener("click",()=>{ const d=new Date(), h=dateKey(d); let a=h; if(b.dataset.fr==="semana"){ const x=new Date(d); x.setDate(x.getDate()-((x.getDay()+6)%7)); a=dateKey(x); } else if(b.dataset.fr==="mes") a=dateKey(new Date(d.getFullYear(),d.getMonth(),1)); fAuto=b.dataset.fr==="hoy"; $("#fDesde").value=a; $("#fHasta").value=h; ensureYear(); renderRegistro(); }));
+setInterval(()=>{ if(!$("#tab-registro").hidden && fechasHoy()) renderRegistro(); },60000);
 ["#fDesde","#fHasta","#fHoraDe","#fHoraA","#fTipo","#fTexto"].forEach(s=>$(s).addEventListener("input",()=>{ if(s!=="#fTexto") ensureYear(); renderRegistro(); }));
 function ensureYear(){ const y=Number(($("#fDesde").value||"").slice(0,4)); if(y && y<S.year){ S.year=y; subscribeAtrasos(); } }
 /* ---------- selector de varios cursos para el filtro del Registro ---------- */
